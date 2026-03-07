@@ -89,4 +89,35 @@
       pointer-events: none;
       z-index: 101;
       opacity: 0.7;
+      transition: width 0.15s ease, height 0.15s ease;
+    }
+    #ar-scale-bar {
+      position: absolute;
+      top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.6);
+      padding: 10px 20px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 101;
+    }
+    #ar-scale-bar label {
+      color: white;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #ar-scale-bar input[type="range"] {
+      width: 150px;
+      accent-color: #e74c3c;
+    }
+    #ar-scale-label {
+      color: white;
+      font-size: 14px;
+      font-weight: bold;
+      min-width: 50px;
     }

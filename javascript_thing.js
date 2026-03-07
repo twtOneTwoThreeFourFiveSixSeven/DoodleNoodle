@@ -1,4 +1,4 @@
- // ===================== DRAWING MODE =====================
+// ===================== DRAWING MODE =====================
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
     const toolbar = document.getElementById("draw-toolbar");
@@ -85,6 +85,41 @@
     let camera = null;
     let reticleModel = null;
     let lastHitPose = null;
+    let arScaleCm = 50; // default 50cm
+
+    // Scale slider
+    const arScaleSlider = document.getElementById("ar-scale-slider");
+    const arScaleLabel = document.getElementById("ar-scale-label");
+    const reticleEl = document.getElementById("reticle");
+
+    if (arScaleSlider) {
+      arScaleSlider.addEventListener("input", () => {
+        arScaleCm = parseInt(arScaleSlider.value);
+
+        // Update label
+        if (arScaleLabel) {
+          arScaleLabel.textContent = arScaleCm >= 100
+            ? (arScaleCm / 100).toFixed(1) + "m"
+            : arScaleCm + "cm";
+        }
+
+        // Update the HTML reticle circle diameter
+        // Map 10cm–300cm → 30px–250px
+        const minPx = 30;
+        const maxPx = 250;
+        const diameter = minPx + ((arScaleCm - 10) / (300 - 10)) * (maxPx - minPx);
+        if (reticleEl) {
+          reticleEl.style.width = diameter + "px";
+          reticleEl.style.height = diameter + "px";
+        }
+
+        // Also update the Three.js reticle ring if in WebXR mode
+        if (reticleModel) {
+          const radius = (arScaleCm / 100) / 2;
+          reticleModel.scale.set(radius / 0.07, radius / 0.07, radius / 0.07);
+        }
+      });
+    }
 
     // Three.js scene setup
     function initThreeScene() {
@@ -106,7 +141,7 @@
       drawingTexture.needsUpdate = true;
 
       const aspect = canvas.width / canvas.height;
-      const planeWidth = 0.5; // 50cm wide in real world
+      const planeWidth = arScaleCm / 100; // convert cm to meters
       const planeHeight = planeWidth / aspect;
 
       const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
@@ -123,7 +158,6 @@
       const matrix = new THREE.Matrix4();
       matrix.fromArray(pose.transform.matrix);
 
-      // Rotate to stand upright on detected surface (wall-like)
       const position = new THREE.Vector3();
       const quaternion = new THREE.Quaternion();
       const scale = new THREE.Vector3();
@@ -134,7 +168,7 @@
       mesh.updateMatrix();
 
       scene.add(mesh);
-      arStatus.textContent = "✅ Drawing placed! Tap again to place more.";
+      arStatus.textContent = "✅ Placed at " + arScaleCm + "cm wide! Tap again to place more.";
     }
 
     // Start WebXR AR session
@@ -281,7 +315,9 @@
         const img = new Image();
         img.src = canvas.toDataURL("image/png");
         img.onload = () => {
-          const size = Math.min(window.innerWidth, window.innerHeight) * 0.4;
+          // Use arScaleCm to determine size relative to screen
+          const scaleFactor = arScaleCm / 100; // 0.1 to 3.0
+          const size = Math.min(window.innerWidth, window.innerHeight) * scaleFactor;
           const aspect = img.width / img.height;
           fallbackDrawings.push({
             x: e.clientX - size / 2,
