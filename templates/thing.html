@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
@@ -9,13 +10,14 @@
   <!-- Three.js for 3D rendering -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 </head>
+
 <body>
 
   <!-- Drawing mode -->
   <div class="toolbar" id="draw-toolbar">
     <div class="user-bar">
       {% if user and user.picture %}
-        <img src="{{ user.picture }}" alt="" class="user-avatar">
+      <img src="{{ user.picture }}" alt="" class="user-avatar">
       {% endif %}
       <span class="user-name">{{ user.name or user.email or 'Guest' }}</span>
       <a href="{{ url_for('logout') }}" class="toolbar-link">Logout</a>
@@ -52,7 +54,9 @@
 
   <!-- AR overlay -->
   <div id="ar-overlay">
-    <div id="ar-version" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.5);color:#0f0;padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace;z-index:100;">v1.2.0</div>
+    <div id="ar-version"
+      style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.5);color:#0f0;padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace;z-index:100;">
+      v1.3.0</div>
     <div id="ar-status">Point at a wall and tap to place your drawing</div>
     <div class="reticle-hint" id="reticle"></div>
     <div id="ar-scale-bar">
@@ -69,4 +73,5 @@
 
   <script src="{{ url_for('static', filename='javascript_thing.js') }}"></script>
 </body>
+
 </html>
