@@ -301,6 +301,9 @@
       const planeHeight = planeWidth / aspect;
 
       const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
+      // Rotate geometry so its face normal (+Z) aligns with the pose's +Y (surface normal)
+      geometry.rotateX(-Math.PI / 2);
+
       const material = new THREE.MeshBasicMaterial({
         map: drawingTexture,
         transparent: true,
@@ -323,8 +326,8 @@
       mesh.quaternion.copy(quaternion);
 
       // Small offset along surface normal to prevent z-fighting
-      const surfaceUp = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
-      mesh.position.add(surfaceUp.multiplyScalar(0.002));
+      const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
+      mesh.position.add(surfaceNormal.multiplyScalar(0.002));
 
       mesh.updateMatrix();
       lastPlacedHeight = position.y; // store for global sharing
