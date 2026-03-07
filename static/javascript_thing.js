@@ -848,9 +848,13 @@ async function loadNearbyGraffiti() {
           map: tex, 
           transparent: true, 
           side: THREE.DoubleSide, 
-          depthWrite: false // prevents z-fighting
+          depthWrite: false, // Prevents Z-fighting
+          depthTest: true    // Still occludes behind real walls
         });
         const mesh = new THREE.Mesh(geo, mat);
+        
+        // Ensure standard rendering updates apply initially before locked
+        mesh.matrixAutoUpdate = true;
         mesh.name = "global_" + item.id;
 
         // Load graffiti relative to your precise starting anchor
@@ -879,7 +883,10 @@ async function loadNearbyGraffiti() {
           // Adjust for user's compass bearing vs the placed bearing
           const itemBearingRad = ((item.bearing || 0) - arStartBearing) * Math.PI / 180;
           const globalY = new THREE.Vector3(0, 1, 0);
-          mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(globalY, itemBearingRad));
+          
+          // Fix WebXR quaternion premultiplication chaining
+          const rotQ = new THREE.Quaternion().setFromAxisAngle(globalY, itemBearingRad);
+          mesh.quaternion.premultiply(rotQ);
         } else {
           // Fallback for older graffiti without quaternions
           const itemBearingRad = ((item.bearing || 0) - arStartBearing) * Math.PI / 180;
@@ -891,13 +898,16 @@ async function loadNearbyGraffiti() {
           }
         }
 
-        // LOCK THE MESH: Disable auto-updates so tracking is pristine
-        mesh.updateMatrix();
-        mesh.updateMatrixWorld();
-        mesh.matrixAutoUpdate = false;
-        mesh.matrixWorldAutoUpdate = false;
-
         targetScene.add(mesh);
+        
+        // Wait exactly one render frame for WebGL to buffer the texture, then permanently lock it
+        requestAnimationFrame(() => {
+          mesh.updateMatrix();
+          mesh.updateMatrixWorld();
+          mesh.matrixAutoUpdate = false;
+          mesh.matrixWorldAutoUpdate = false;
+        });
+        
         loaded++;
 
         if (gpsStatus) gpsStatus.textContent = `🌍 Loaded ${loaded} graffiti nearby`;
