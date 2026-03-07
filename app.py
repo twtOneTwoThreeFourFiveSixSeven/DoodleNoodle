@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timezone
 from urllib.parse import quote_plus, urlencode
+from zoneinfo import ZoneInfo
 
 from authlib.integrations.flask_client import OAuth
 from bson import ObjectId
@@ -150,7 +151,7 @@ def save_graffiti():
         "author_pic": session.get("user", {}).get("picture", ""),
         "likes": [],
         "comments": [],
-        "created": datetime.now(timezone.utc)
+        "created": datetime.now(ZoneInfo("America/Toronto"))
     }
 
     result = graffiti_col.insert_one(doc)
@@ -159,31 +160,11 @@ def save_graffiti():
 
 @app.route("/api/graffiti/nearby")
 def get_nearby_graffiti():
-    """Fetch graffiti within radius_m meters of lat/lng."""
+    """Fetch all graffiti from the database."""
     if graffiti_col is None:
         return jsonify({"error": "Database not connected"}), 503
 
-    lat = request.args.get("lat", type=float)
-    lng = request.args.get("lng", type=float)
-    radius = request.args.get("radius", default=200, type=int)  # meters
-
-    if lat is None or lng is None:
-        return jsonify({"error": "Missing lat or lng"}), 400
-
-    # Cap radius at 2km
-    radius = min(radius, 2000)
-
-    cursor = graffiti_col.find({
-        "location": {
-            "$nearSphere": {
-                "$geometry": {
-                    "type": "Point",
-                    "coordinates": [lng, lat]
-                },
-                "$maxDistance": radius
-            }
-        }
-    }).limit(50)  # max 50 graffiti at once
+    cursor = graffiti_col.find().sort("created", -1).limit(50)
 
     results = []
     for doc in cursor:
