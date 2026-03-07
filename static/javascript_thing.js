@@ -238,8 +238,8 @@ function renderPlacingImage() {
     const cancelBtn = document.createElement("button");
     cancelBtn.textContent = "❌ Cancel";
     cancelBtn.style.cssText = "position:absolute;bottom:70px;left:calc(50% + 90px);padding:10px 24px;border:none;border-radius:6px;background:#e74c3c;color:white;font-size:16px;font-weight:bold;cursor:pointer;z-index:51;";
-    cancelBtn.addEventListener("click", () => { placingImage = null; removePlaceOverlay(); });
-    cancelBtn.addEventListener("touchend", (e) => { e.stopPropagation(); placingImage = null; removePlaceOverlay(); });
+    cancelBtn.addEventListener("click", () => { removePlaceOverlay(); placingImage = null; });
+    cancelBtn.addEventListener("touchend", (e) => { e.stopPropagation(); removePlaceOverlay(); placingImage = null; });
     placeOverlay.appendChild(cancelBtn);
 
     document.body.appendChild(placeOverlay);
@@ -330,18 +330,18 @@ function commitImage() {
   ctx.restore();
 
   placingImage = null;
-  removePlaceOverlay();
+  removePlaceOverlay(true);
 }
 
-function removePlaceOverlay() {
+function removePlaceOverlay(committed = false) {
   if (placeOverlay) {
     placeOverlay.remove();
     placeOverlay = null;
   }
 
-  // If we still have an active placingImage with savedData, it means we cancelled
-  // and need to restore the canvas to its state before the preview was drawn.
-  if (placingImage && placingImage.savedData) {
+  // If we still have an active placingImage with savedData and we didn't just commit, 
+  // it means we cancelled and need to restore the canvas to its state before the preview.
+  if (!committed && placingImage && placingImage.savedData) {
     ctx.putImageData(placingImage.savedData, 0, 0);
   }
 }
