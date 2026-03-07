@@ -1,8 +1,16 @@
  // ===================== DRAWING MODE =====================
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight - 50;
+    const toolbar = document.getElementById("draw-toolbar");
+
+    function resizeCanvas() {
+      const toolbarHeight = toolbar.getBoundingClientRect().height;
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight - toolbarHeight;
+      canvas.style.width = canvas.width + "px";
+      canvas.style.height = canvas.height + "px";
+    }
+    resizeCanvas();
 
     // Transparent background — don't fill with white
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -58,7 +66,7 @@
     });
     window.addEventListener("resize", () => {
       const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      canvas.width = window.innerWidth; canvas.height = window.innerHeight - 50;
+      resizeCanvas();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.putImageData(img, 0, 0);
     });
