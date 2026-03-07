@@ -256,8 +256,14 @@ let reticleModel = null;
 let lastHitPose = null;
 let arScaleCm = 50; // default 50cm
 let arStartBearing = 0;        // compass heading when AR started
+let arStartLat = null;
+let arStartLng = null;
 let lastPlacedHeight = 1.5;    // last placed graffiti height (meters from floor)
-const APP_VERSION = "1.3";   // Version number - update when making changes
+let lastPlacedSurfaceType = "wall";
+let lastPlacedQuaternion = [0, 0, 0, 1];
+let lastPlacedX = undefined;
+let lastPlacedZ = undefined;
+const APP_VERSION = "1.6";   // Version number - update when making changes
 // Scale slider
 const arScaleSlider = document.getElementById("ar-scale-slider");
 const arScaleLabel = document.getElementById("ar-scale-label");
@@ -360,10 +366,41 @@ function placeDrawingAtHit(pose) {
   // In WebXR hit test results, the local +Y axis of the pose represents the surface normal
   const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize();
 
-  // Classify surface based on normal direction
-  const isWall = Math.abs(surfaceNormal.y) < 0.7;
-  const isCeiling = !isWall && surfaceNormal.y < -0.7;
-  const surfaceType = isWall ? "wall" : (isCeiling ? "ceiling" : "floor");
+  // Read the manual surface mode override
+  const modeSelector = document.getElementById("ar-surface-mode");
+  const mode = modeSelector ? modeSelector.value : "auto";
+
+  let isWall = false;
+  let isCeiling = false;
+  let surfaceType = "floor";
+
+  if (mode === "auto") {
+    // Classify surface naturally based on normal direction
+    isWall = Math.abs(surfaceNormal.y) < 0.7;
+    isCeiling = !isWall && surfaceNormal.y < -0.7;
+    surfaceType = isWall ? "wall" : (isCeiling ? "ceiling" : "floor");
+  } else if (mode === "wall") {
+    // Force a wall (vertical) orientation
+    isWall = true;
+    surfaceType = "wall";
+    
+    // Construct a normal pointing horizontally towards the camera
+    const camPos = new THREE.Vector3();
+    camera.getWorldPosition(camPos);
+    
+    surfaceNormal.copy(camPos).sub(position);
+    surfaceNormal.y = 0; // Flatten the normal to be strictly horizontal
+    if (surfaceNormal.lengthSq() > 0.001) {
+      surfaceNormal.normalize();
+    } else {
+      surfaceNormal.set(0, 0, 1); // fallback if camera directly above
+    }
+  } else if (mode === "floor") {
+    // Force a floor (horizontal) orientation
+    isWall = false;
+    surfaceType = "floor";
+    surfaceNormal.set(0, 1, 0); // pointing straight up
+  }
 
   // === ALIGN MESH FLAT ON THE SURFACE ===
   // A THREE.PlaneGeometry is created facing the +Z axis (0, 0, 1).
@@ -428,7 +465,12 @@ function placeDrawingAtHit(pose) {
   mesh.userData.lockedPosition = mesh.position.clone();
   mesh.userData.lockedQuaternion = mesh.quaternion.clone();
   mesh.userData.lockedMatrix = mesh.matrix.clone();
+  
   lastPlacedHeight = position.y;
+  lastPlacedSurfaceType = surfaceType;
+  lastPlacedQuaternion = [mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w];
+  lastPlacedX = mesh.position.x;
+  lastPlacedZ = mesh.position.z;
 
   scene.add(mesh);
   arStatus.textContent = "🔒 LOCKED on " + surfaceType.toUpperCase() + " at " + arScaleCm + "cm — graffiti is now anchored in place!";
@@ -470,15 +512,17 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
 
+    // Record compass and GPS at AR start for true global anchor calculations
+    arStartBearing = userBearing;
+    arStartLat = userLat;
+    arStartLng = userLng;
+
     // Request AR session with hit-test + spatial anchors
     xrSession = await navigator.xr.requestSession("immersive-ar", {
       requiredFeatures: ["hit-test"],
       optionalFeatures: ["dom-overlay", "anchors"],
       domOverlay: { root: arOverlay }
     });
-
-    // Record compass heading at AR start for GPS offset rotation
-    arStartBearing = userBearing;
 
     arOverlay.style.display = "block";
     document.getElementById("draw-toolbar").style.display = "none";
@@ -523,8 +567,43 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
           lastHitPose.transform.orientation.z,
           lastHitPose.transform.orientation.w
         );
-        const hitNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(hitQ);
-        const hitSurface = Math.abs(hitNormal.y) < 0.5 ? "wall" : (hitNormal.y < -0.5 ? "ceiling" : "floor");
+        const rawHitNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(hitQ);
+        
+        const modeSelector = document.getElementById("ar-surface-mode");
+        const mode = modeSelector ? modeSelector.value : "auto";
+        
+        let hitNormal = rawHitNormal.clone();
+        let hitSurface = "floor";
+
+        const hitPos = new THREE.Vector3(
+          lastHitPose.transform.position.x,
+          lastHitPose.transform.position.y,
+          lastHitPose.transform.position.z
+        );
+
+        if (mode === "auto") {
+          hitSurface = Math.abs(hitNormal.y) < 0.5 ? "wall" : (hitNormal.y < -0.5 ? "ceiling" : "floor");
+          reticleModel.matrix.fromArray(lastHitPose.transform.matrix);
+        } else if (mode === "wall") {
+          hitSurface = "wall";
+          const camPos = new THREE.Vector3();
+          camera.getWorldPosition(camPos);
+          hitNormal.copy(camPos).sub(hitPos);
+          hitNormal.y = 0;
+          if (hitNormal.lengthSq() > 0.001) hitNormal.normalize();
+          else hitNormal.set(0, 0, 1);
+          
+          const alignQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), hitNormal);
+          reticleModel.matrix.makeRotationFromQuaternion(alignQ);
+          reticleModel.matrix.setPosition(hitPos);
+        } else if (mode === "floor") {
+          hitSurface = "floor";
+          hitNormal.set(0, 1, 0);
+          
+          const alignQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), hitNormal);
+          reticleModel.matrix.makeRotationFromQuaternion(alignQ);
+          reticleModel.matrix.setPosition(hitPos);
+        }
 
         // Debug colors: red=wall, green=floor, cyan=ceiling
         const debugColors = { wall: 0xff3333, floor: 0x33ff33, ceiling: 0x33ccff };
@@ -532,11 +611,6 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
         reticleModel.material.color.setHex(col);
 
         // Debug: position arrow at hit point, pointing along surface normal
-        const hitPos = new THREE.Vector3(
-          lastHitPose.transform.position.x,
-          lastHitPose.transform.position.y,
-          lastHitPose.transform.position.z
-        );
         if (debugNormalArrow) {
           debugNormalArrow.position.copy(hitPos);
           debugNormalArrow.setDirection(hitNormal);
@@ -546,13 +620,13 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
 
         // Debug: translucent surface patch aligned to the hit
         if (debugPlane) {
-          debugPlane.matrix.fromArray(lastHitPose.transform.matrix);
+          debugPlane.matrix.copy(reticleModel.matrix);
           debugPlane.material.color.setHex(col);
           debugPlane.visible = true;
         }
 
-        arStatus.textContent = "[" + hitSurface.toUpperCase() + "] normal Y=" + hitNormal.y.toFixed(2)
-          + " (" + hitNormal.x.toFixed(2) + "," + hitNormal.y.toFixed(2) + "," + hitNormal.z.toFixed(2) + ") — tap to place!";
+        arStatus.textContent = "[" + hitSurface.toUpperCase() + (mode !== "auto" ? " OVERRIDE" : "") + "] normal Y=" + hitNormal.y.toFixed(2)
+          + " — tap to place!";
       } else {
         reticleModel.visible = false;
         if (debugNormalArrow) debugNormalArrow.visible = false;
@@ -655,20 +729,40 @@ document.getElementById("ar-share-btn").addEventListener("click", async () => {
 
   const imageData = canvas.toDataURL("image/png");
   const description = document.getElementById("ar-description").value.trim();
-  if (gpsStatus) gpsStatus.textContent = "Uploading...";
+  
+  if (lastPlacedX === undefined || arStartLat === null || arStartLng === null) {
+    if (gpsStatus) gpsStatus.textContent = "❌ Please place graffiti on a surface first!";
+    alert("Please place your graffiti onto a wall or floor in AR before sharing.");
+    return;
+  }
+
+  // Convert local WebXR (X, Z) back to Global GPS (Lat, Lng)
+  const bRad = arStartBearing * Math.PI / 180;
+  const eastMeters = lastPlacedX * Math.cos(bRad) - lastPlacedZ * Math.sin(bRad);
+  const northMeters = -lastPlacedX * Math.sin(bRad) - lastPlacedZ * Math.cos(bRad);
+
+  const metersPerDegLat = 111320;
+  const metersPerDegLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
+
+  const graffitiLat = arStartLat + (northMeters / metersPerDegLat);
+  const graffitiLng = arStartLng + (eastMeters / metersPerDegLng);
+
+  if (gpsStatus) gpsStatus.textContent = "Uploading true 3D coordinates...";
 
   try {
     const resp = await fetch("/api/graffiti", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        lat: userLat,
-        lng: userLng,
+        lat: graffitiLat,
+        lng: graffitiLng,
         image: imageData,
         scale: arScaleCm,
-        bearing: userBearing,
+        bearing: arStartBearing,
         description: description,
-        height: lastPlacedHeight
+        height: lastPlacedHeight,
+        surfaceType: lastPlacedSurfaceType,
+        quaternion: lastPlacedQuaternion
       })
     });
     const result = await resp.json();
@@ -751,16 +845,19 @@ async function loadNearbyGraffiti() {
 
         const geo = new THREE.PlaneGeometry(planeW, planeH);
         const mat = new THREE.MeshBasicMaterial({
-          map: tex, transparent: true, side: THREE.DoubleSide, depthTest: false
+          map: tex, 
+          transparent: true, 
+          side: THREE.DoubleSide, 
+          depthWrite: false // prevents z-fighting
         });
         const mesh = new THREE.Mesh(geo, mat);
         mesh.name = "global_" + item.id;
 
-        // GPS offset → meters
-        const dLat = item.lat - userLat;
-        const dLng = item.lng - userLng;
+        // Load graffiti relative to your precise starting anchor
+        const dLat = item.lat - arStartLat;
+        const dLng = item.lng - arStartLng;
         const metersPerDegLat = 111320;
-        const metersPerDegLng = 111320 * Math.cos(userLat * Math.PI / 180);
+        const metersPerDegLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
         const northMeters = dLat * metersPerDegLat;
         const eastMeters = dLng * metersPerDegLng;
 
@@ -775,9 +872,30 @@ async function loadNearbyGraffiti() {
 
         mesh.position.set(sceneX, h, sceneZ);
 
-        // Orient graffiti by its bearing, adjusted for scene rotation
-        const itemBearingRad = ((item.bearing || 0) - sceneBearing) * Math.PI / 180;
-        mesh.rotation.y = itemBearingRad;
+        if (item.quaternion && item.quaternion.length === 4) {
+          // Restore exact 3D orientation
+          mesh.quaternion.set(item.quaternion[0], item.quaternion[1], item.quaternion[2], item.quaternion[3]);
+          
+          // Adjust for user's compass bearing vs the placed bearing
+          const itemBearingRad = ((item.bearing || 0) - arStartBearing) * Math.PI / 180;
+          const globalY = new THREE.Vector3(0, 1, 0);
+          mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(globalY, itemBearingRad));
+        } else {
+          // Fallback for older graffiti without quaternions
+          const itemBearingRad = ((item.bearing || 0) - arStartBearing) * Math.PI / 180;
+          mesh.rotation.y = itemBearingRad;
+          if (item.surfaceType === "floor") {
+            mesh.rotation.x = -Math.PI / 2;
+          } else if (item.surfaceType === "ceiling") {
+            mesh.rotation.x = Math.PI / 2;
+          }
+        }
+
+        // LOCK THE MESH: Disable auto-updates so tracking is pristine
+        mesh.updateMatrix();
+        mesh.updateMatrixWorld();
+        mesh.matrixAutoUpdate = false;
+        mesh.matrixWorldAutoUpdate = false;
 
         targetScene.add(mesh);
         loaded++;
