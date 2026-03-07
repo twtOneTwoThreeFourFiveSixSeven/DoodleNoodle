@@ -116,6 +116,57 @@
       gap: 10px;
       z-index: 101;
     }
+    /* iOS AR permission gate */
+    #ios-ar-gate {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .ios-gate-box {
+      background: #222;
+      border-radius: 16px;
+      padding: 30px 40px;
+      text-align: center;
+      max-width: 340px;
+    }
+    .ios-gate-box h2 { color: white; margin-bottom: 10px; font-size: 20px; }
+    .ios-gate-box p { color: #aaa; margin-bottom: 20px; font-size: 14px; }
+    .ios-gate-box button {
+      padding: 12px 28px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      margin: 5px;
+    }
+    #ios-start-ar-btn { background: #27ae60; color: white; }
+    #ios-cancel-btn { background: #555; color: white; }
+    #ios-gate-status { color: #e74c3c; margin-top: 12px; font-size: 13px; }
+
+    /* iOS Safari z-index fix: explicit stacking for AR layers */
+    #fallback-video {
+      position: fixed !important;
+      z-index: 1 !important;
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+    }
+    #fallback-3d {
+      position: fixed !important;
+      z-index: 2 !important;
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+    }
+    #ar-overlay {
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+    }
+
     #ar-scale-bar label {
       color: white;
       font-size: 14px;
@@ -126,6 +177,36 @@
     #ar-scale-bar input[type="range"] {
       width: 150px;
       accent-color: #e74c3c;
+    }
+    #ar-action-bar {
+      position: absolute;
+      top: 110px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 101;
+    }
+    #ar-action-bar button {
+      position: static;
+      padding: 10px 18px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #ar-share-btn { background: #27ae60; color: white; }
+    #ar-load-btn { background: #2980b9; color: white; }
+    #ar-gps-status {
+      position: absolute;
+      top: 155px;
+      left: 0; right: 0;
+      text-align: center;
+      color: #ffd700;
+      font-size: 13px;
+      text-shadow: 0 0 6px black;
+      z-index: 101;
     }
     #ar-scale-label {
       color: white;

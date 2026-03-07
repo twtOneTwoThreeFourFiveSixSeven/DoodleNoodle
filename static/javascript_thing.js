@@ -45,7 +45,8 @@
 
     canvas.addEventListener("mousedown", startDraw); canvas.addEventListener("mousemove", draw);
     canvas.addEventListener("mouseup", stopDraw); canvas.addEventListener("mouseleave", stopDraw);
-    canvas.addEventListener("touchstart", startDraw); canvas.addEventListener("touchmove", draw);
+    canvas.addEventListener("touchstart", startDraw, { passive: false });
+    canvas.addEventListener("touchmove", draw, { passive: false });
     canvas.addEventListener("touchend", stopDraw);
 
     document.getElementById("pen-btn").addEventListener("click", () => {
@@ -322,18 +323,75 @@
       arStatus.textContent = "✅ Placed at " + arScaleCm + "cm wide! Tap again to place more.";
     }
 
+    // ===================== HTTPS CHECK =====================
+    function isSecureContext() {
+      return location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    }
+
+    // ===================== iOS DETECTION =====================
+    function isIOS() {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+             (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    }
+
+    // ===================== iOS PERMISSION GATE =====================
+    const iosGate = document.getElementById("ios-ar-gate");
+    const iosStartBtn = document.getElementById("ios-start-ar-btn");
+    const iosCancelBtn = document.getElementById("ios-cancel-btn");
+    const iosGateStatus = document.getElementById("ios-gate-status");
+
+    // iOS "Start AR" button — handles permission requests inside a user gesture
+    iosStartBtn.addEventListener("click", async () => {
+      iosGateStatus.textContent = "Requesting permissions...";
+
+      // 1. Request gyroscope permission (iOS 13+ requires user gesture)
+      if (typeof DeviceOrientationEvent !== "undefined" &&
+          typeof DeviceOrientationEvent.requestPermission === "function") {
+        try {
+          const motionPerm = await DeviceOrientationEvent.requestPermission();
+          if (motionPerm !== "granted") {
+            iosGateStatus.textContent = "❌ Motion sensor denied. AR needs gyroscope access.";
+            return;
+          }
+        } catch (err) {
+          iosGateStatus.textContent = "❌ Motion sensor error: " + err.message;
+          return;
+        }
+      }
+
+      // 2. Permissions granted — hide gate, launch AR
+      iosGate.style.display = "none";
+      startFallbackAR(true); // true = permissions already granted
+    });
+
+    iosCancelBtn.addEventListener("click", () => {
+      iosGate.style.display = "none";
+    });
+
     // Start WebXR AR session
     document.getElementById("ar-btn").addEventListener("click", async () => {
+      // HTTPS check — camera won't work without it
+      if (!isSecureContext()) {
+        alert("AR requires HTTPS. Camera and sensors are blocked on insecure connections.\n\nUse https:// or localhost.");
+        return;
+      }
+
+      // iOS path — show permission gate (button required for user gesture)
+      if (isIOS() && (!navigator.xr)) {
+        iosGate.style.display = "flex";
+        iosGateStatus.textContent = "";
+        return;
+      }
+
       // Check WebXR support
       if (!navigator.xr) {
-        // Fallback: simple camera overlay (for iOS / unsupported browsers)
-        startFallbackAR();
+        startFallbackAR(false);
         return;
       }
 
       const supported = await navigator.xr.isSessionSupported("immersive-ar");
       if (!supported) {
-        startFallbackAR();
+        startFallbackAR(false);
         return;
       }
 
@@ -402,7 +460,7 @@
 
       } catch (err) {
         console.error(err);
-        startFallbackAR();
+        startFallbackAR(false);
       }
     });
 
@@ -420,14 +478,15 @@
     let fbOrientAlpha = 0, fbOrientBeta = 0, fbOrientGamma = 0;
     let fbActive = false;
 
-    async function startFallbackAR() {
+    async function startFallbackAR(permissionsGranted) {
       arOverlay.style.display = "block";
       document.getElementById("draw-toolbar").style.display = "none";
       document.getElementById("canvas").style.display = "none";
       fbActive = true;
 
-      // ---- Request gyroscope permission on iOS 13+ ----
-      if (typeof DeviceOrientationEvent !== "undefined" &&
+      // ---- Request gyroscope permission (non-iOS, or if not already granted) ----
+      if (!permissionsGranted &&
+          typeof DeviceOrientationEvent !== "undefined" &&
           typeof DeviceOrientationEvent.requestPermission === "function") {
         try {
           const perm = await DeviceOrientationEvent.requestPermission();
@@ -439,7 +498,7 @@
         }
       }
 
-      // ---- Camera feed background ----
+      // ---- Camera feed background (iOS-compatible attributes) ----
       let vid = document.getElementById("fallback-video");
       if (!vid) {
         vid = document.createElement("video");
@@ -447,8 +506,12 @@
         vid.autoplay = true;
         vid.playsInline = true;
         vid.muted = true;
+        // iOS Safari requires all three attributes set explicitly
         vid.setAttribute("playsinline", "");
-        vid.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:-1;";
+        vid.setAttribute("muted", "");
+        vid.setAttribute("autoplay", "");
+        vid.setAttribute("webkit-playsinline", ""); // older iOS
+        vid.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:1;-webkit-transform:translateZ(0);transform:translateZ(0);";
         arOverlay.insertBefore(vid, arOverlay.firstChild);
       }
 
@@ -470,7 +533,7 @@
 
         const fbCanvas = document.createElement("canvas");
         fbCanvas.id = "fallback-3d";
-        fbCanvas.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;touch-action:none;";
+        fbCanvas.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;z-index:2;touch-action:none;-webkit-transform:translateZ(0);transform:translateZ(0);";
         arOverlay.insertBefore(fbCanvas, vid.nextSibling);
 
         fbRenderer = new THREE.WebGLRenderer({ canvas: fbCanvas, alpha: true, antialias: true });
@@ -501,16 +564,21 @@
         camera.quaternion.multiply(q0.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -screenOrientation * degToRad));
       }
 
-      // ---- Tap to place drawing in 3D ----
+      // ---- Tap to place drawing in 3D (passive:false for iOS) ----
       const fb3d = document.getElementById("fallback-3d");
       fb3d.addEventListener("click", (e) => {
         placeDrawingInScene(fbScene, fbCamera, e);
       });
+      fb3d.addEventListener("touchstart", (e) => {
+        if (e.target.tagName === "BUTTON") return;
+        e.preventDefault(); // prevent iOS scroll/bounce
+      }, { passive: false });
       fb3d.addEventListener("touchend", (e) => {
         if (e.target.tagName === "BUTTON") return;
+        e.preventDefault();
         const touch = e.changedTouches[0];
         placeDrawingInScene(fbScene, fbCamera, touch);
-      });
+      }, { passive: false });
 
       function placeDrawingInScene(sc, cam, evt) {
         const drawingTexture = new THREE.CanvasTexture(canvas);
@@ -536,6 +604,14 @@
 
         sc.add(mesh);
         arStatus.textContent = "✅ Placed! Move phone to see it pinned. Tap to place more.";
+
+        // Auto-anchor: save GPS coords with this placement
+        if (userLat !== null && userLng !== null) {
+          mesh.userData.lat = userLat;
+          mesh.userData.lng = userLng;
+          mesh.userData.bearing = userBearing;
+          mesh.userData.anchored = true;
+        }
       }
 
       // ---- Render loop ----
@@ -550,6 +626,167 @@
       }
       requestAnimationFrame(renderFallbackAR);
       arStatus.textContent = "Tap to place your drawing — move phone to look around";
+
+      // ---- Auto-load nearby graffiti on AR start ----
+      loadNearbyGraffiti();
+    }
+
+    // ===================== GPS + GLOBAL GRAFFITI =====================
+    let userLat = null, userLng = null, userBearing = 0;
+    const gpsStatus = document.getElementById("ar-gps-status");
+
+    // Continuously track GPS position
+    if ("geolocation" in navigator) {
+      navigator.geolocation.watchPosition(
+        (pos) => {
+          userLat = pos.coords.latitude;
+          userLng = pos.coords.longitude;
+          if (pos.coords.heading != null && !isNaN(pos.coords.heading)) {
+            userBearing = pos.coords.heading;
+          }
+        },
+        (err) => { console.warn("GPS error:", err.message); },
+        { enableHighAccuracy: true, maximumAge: 5000 }
+      );
+    }
+
+    // Also use compass for bearing when GPS heading unavailable
+    window.addEventListener("deviceorientation", (e) => {
+      if (e.webkitCompassHeading != null) {
+        userBearing = e.webkitCompassHeading; // iOS
+      } else if (e.alpha != null) {
+        userBearing = 360 - e.alpha; // Android
+      }
+    });
+
+    // Share graffiti globally (save to MongoDB)
+    document.getElementById("ar-share-btn").addEventListener("click", async () => {
+      if (userLat === null || userLng === null) {
+        if (gpsStatus) gpsStatus.textContent = "⚠️ Waiting for GPS... make sure location is enabled.";
+        return;
+      }
+
+      const imageData = canvas.toDataURL("image/png");
+      if (gpsStatus) gpsStatus.textContent = "Uploading...";
+
+      try {
+        const resp = await fetch("/api/graffiti", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lat: userLat,
+            lng: userLng,
+            image: imageData,
+            scale: arScaleCm,
+            bearing: userBearing
+          })
+        });
+        const result = await resp.json();
+        if (resp.ok) {
+          if (gpsStatus) gpsStatus.textContent = "✅ Shared globally! Anyone nearby can see it.";
+        } else {
+          if (gpsStatus) gpsStatus.textContent = "❌ " + (result.error || "Upload failed");
+        }
+      } catch (err) {
+        if (gpsStatus) gpsStatus.textContent = "❌ Network error: " + err.message;
+      }
+    });
+
+    // Load nearby graffiti from MongoDB and render in 3D scene
+    document.getElementById("ar-load-btn").addEventListener("click", () => loadNearbyGraffiti());
+
+    async function loadNearbyGraffiti() {
+      if (userLat === null || userLng === null) {
+        if (gpsStatus) gpsStatus.textContent = "⚠️ Waiting for GPS...";
+        return;
+      }
+
+      if (gpsStatus) gpsStatus.textContent = "📡 Loading nearby graffiti...";
+
+      try {
+        const resp = await fetch(`/api/graffiti/nearby?lat=${userLat}&lng=${userLng}&radius=200`);
+        if (!resp.ok) {
+          const err = await resp.json();
+          if (gpsStatus) gpsStatus.textContent = "❌ " + (err.error || "Load failed");
+          return;
+        }
+
+        const items = await resp.json();
+        if (items.length === 0) {
+          if (gpsStatus) gpsStatus.textContent = "No graffiti nearby. Be the first!";
+          return;
+        }
+
+        // Determine which scene to render into
+        const targetScene = fbScene || scene;
+        const targetCamera = fbCamera || camera;
+
+        if (!targetScene) {
+          if (gpsStatus) gpsStatus.textContent = "⚠️ AR scene not ready";
+          return;
+        }
+
+        let loaded = 0;
+        for (const item of items) {
+          // Skip if already loaded (check by ID tag)
+          if (targetScene.getObjectByName("global_" + item.id)) continue;
+
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => {
+            const tex = new THREE.CanvasTexture(imageToCanvas(img));
+            tex.needsUpdate = true;
+
+            const aspect = img.width / img.height;
+            const planeW = (item.scale || 50) / 100;
+            const planeH = planeW / aspect;
+
+            const geo = new THREE.PlaneGeometry(planeW, planeH);
+            const mat = new THREE.MeshBasicMaterial({
+              map: tex, transparent: true, side: THREE.DoubleSide, depthTest: false
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.name = "global_" + item.id;
+
+            // Position by GPS offset: convert lat/lng difference to meters
+            const dLat = item.lat - userLat;
+            const dLng = item.lng - userLng;
+            const metersPerDegLat = 111320;
+            const metersPerDegLng = 111320 * Math.cos(userLat * Math.PI / 180);
+
+            const offsetX = dLng * metersPerDegLng; // east-west
+            const offsetZ = -dLat * metersPerDegLat; // north-south (neg = north in Three.js)
+
+            // Place at 1.5m height (roughly eye level on a wall)
+            mesh.position.set(offsetX, 0, offsetZ);
+
+            // Rotate to face the bearing it was placed at
+            const bearingRad = (item.bearing || 0) * (Math.PI / 180);
+            mesh.rotation.y = bearingRad;
+
+            targetScene.add(mesh);
+            loaded++;
+
+            if (gpsStatus) gpsStatus.textContent = `🌍 Loaded ${loaded} graffiti nearby`;
+          };
+          img.src = item.image;
+        }
+
+        if (loaded === 0 && gpsStatus) {
+          gpsStatus.textContent = `🌍 ${items.length} graffiti nearby (loading images...)`;
+        }
+      } catch (err) {
+        if (gpsStatus) gpsStatus.textContent = "❌ " + err.message;
+      }
+    }
+
+    // Helper: convert Image to canvas (for Three.js texture)
+    function imageToCanvas(img) {
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      c.getContext("2d").drawImage(img, 0, 0);
+      return c;
     }
 
     // Clean up fallback AR on exit
