@@ -112,6 +112,7 @@
       padding: 10px 20px;
       border-radius: 10px;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 10px;
       z-index: 200;
@@ -216,6 +217,12 @@
       font-size: 14px;
       font-weight: bold;
       min-width: 50px;
+    }
+    #ar-rotate-label {
+      color: white;
+      font-size: 14px;
+      font-weight: bold;
+      min-width: 40px;
     }
 
     /* ===================== USER BAR (in toolbar) ===================== */
