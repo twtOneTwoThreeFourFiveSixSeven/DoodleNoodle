@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ g.description[:40] or 'Graffiti' }} — GoGoGraffiti</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css.css') }}">
+</head>
+<body class="home-body">
+
+  <div class="detail-page">
+    <!-- Nav -->
+    <div class="detail-nav">
+      <a href="{{ url_for('home') }}" class="btn btn-secondary btn-sm">← Home</a>
+      {% if user %}
+        <a href="{{ url_for('app_page') }}" class="btn btn-secondary btn-sm">Open App</a>
+      {% endif %}
+    </div>
+
+    <!-- Graffiti image -->
+    <div class="detail-image-wrap">
+      <img src="{{ g.image }}" alt="Graffiti" class="detail-image">
+    </div>
+
+    <!-- Info -->
+    <div class="detail-info">
+      <div class="detail-author">
+        {% if g.author_pic %}
+          <img src="{{ g.author_pic }}" alt="" class="detail-avatar">
+        {% endif %}
+        <span class="detail-author-name">{{ g.author }}</span>
+        <span class="detail-date">{{ g.created.strftime('%b %d, %Y') if g.created else '' }}</span>
+      </div>
+
+      {% if g.description %}
+        <p class="detail-description">{{ g.description }}</p>
+      {% endif %}
+
+      <!-- Like button -->
+      <div class="detail-actions">
+        <button id="like-btn" class="btn-like {% if g.user_liked %}liked{% endif %}" data-id="{{ g.id }}">
+          <span id="like-icon">{{ '❤️' if g.user_liked else '🤍' }}</span>
+          <span id="like-count">{{ g.like_count }}</span>
+        </button>
+        <span class="detail-comment-count">💬 {{ g.comments|length }} comment{{ 's' if g.comments|length != 1 else '' }}</span>
+      </div>
+    </div>
+
+    <!-- Comments section -->
+    <div class="detail-comments">
+      <h3>Comments</h3>
+
+      {% if user %}
+      <form id="comment-form" class="comment-form">
+        <textarea id="comment-text" placeholder="Write a comment..." maxlength="1000" rows="2"></textarea>
+        <button type="submit" class="btn btn-primary btn-sm">Post</button>
+      </form>
+      {% else %}
+      <p class="comment-login-hint"><a href="{{ url_for('login') }}">Log in</a> to leave a comment or like.</p>
+      {% endif %}
+
+      <div id="comments-list">
+        {% for c in g.comments|reverse %}
+        <div class="comment-item">
+          <div class="comment-header">
+            {% if c.author_pic %}
+              <img src="{{ c.author_pic }}" alt="" class="comment-avatar">
+            {% endif %}
+            <strong>{{ c.author }}</strong>
+            <span class="comment-date">{{ c.created[:10] if c.created else '' }}</span>
+          </div>
+          <p class="comment-text">{{ c.text }}</p>
+        </div>
+        {% else %}
+        <p class="no-comments" id="no-comments">No comments yet. Be the first!</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const graffitiId = "{{ g.id }}";
+
+    // Like toggle
+    document.getElementById("like-btn").addEventListener("click", async () => {
+      const resp = await fetch(`/api/graffiti/${graffitiId}/like`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      if (resp.status === 401) { window.location.href = "/login"; return; }
+      const data = await resp.json();
+      if (data.error) return;
+      document.getElementById("like-icon").textContent = data.liked ? "❤️" : "🤍";
+      document.getElementById("like-count").textContent = data.count;
+      document.getElementById("like-btn").classList.toggle("liked", data.liked);
+    });
+
+    // Comment form
+    const form = document.getElementById("comment-form");
+    if (form) {
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = document.getElementById("comment-text").value.trim();
+        if (!text) return;
+        const resp = await fetch(`/api/graffiti/${graffitiId}/comment`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+        if (resp.status === 401) { window.location.href = "/login"; return; }
+        const data = await resp.json();
+        if (!data.ok) return;
+        const c = data.comment;
+        const noComments = document.getElementById("no-comments");
+        if (noComments) noComments.remove();
+        const list = document.getElementById("comments-list");
+        const div = document.createElement("div");
+        div.className = "comment-item comment-new";
+        div.innerHTML = `<div class="comment-header">
+          ${c.author_pic ? `<img src="${c.author_pic}" alt="" class="comment-avatar">` : ''}
+          <strong>${c.author}</strong>
+          <span class="comment-date">${c.created.slice(0, 10)}</span>
+        </div><p class="comment-text">${c.text.replace(/</g, '&lt;')}</p>`;
+        list.insertBefore(div, list.firstChild);
+        document.getElementById("comment-text").value = "";
+      });
+    }
+  </script>
+</body>
+</html>

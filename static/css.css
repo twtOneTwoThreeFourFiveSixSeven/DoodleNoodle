@@ -119,6 +119,57 @@
       touch-action: auto;
       pointer-events: auto;
     }
+    /* iOS AR permission gate */
+    #ios-ar-gate {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .ios-gate-box {
+      background: #222;
+      border-radius: 16px;
+      padding: 30px 40px;
+      text-align: center;
+      max-width: 340px;
+    }
+    .ios-gate-box h2 { color: white; margin-bottom: 10px; font-size: 20px; }
+    .ios-gate-box p { color: #aaa; margin-bottom: 20px; font-size: 14px; }
+    .ios-gate-box button {
+      padding: 12px 28px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      margin: 5px;
+    }
+    #ios-start-ar-btn { background: #27ae60; color: white; }
+    #ios-cancel-btn { background: #555; color: white; }
+    #ios-gate-status { color: #e74c3c; margin-top: 12px; font-size: 13px; }
+
+    /* iOS Safari z-index fix: explicit stacking for AR layers */
+    #fallback-video {
+      position: fixed !important;
+      z-index: 1 !important;
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+    }
+    #fallback-3d {
+      position: fixed !important;
+      z-index: 2 !important;
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+    }
+    #ar-overlay {
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+    }
+
     #ar-scale-bar label {
       color: white;
       font-size: 14px;
@@ -130,12 +181,321 @@
       width: 150px;
       accent-color: #e74c3c;
     }
+    #ar-action-bar {
+      position: absolute;
+      top: 110px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 101;
+    }
+    #ar-action-bar button {
+      position: static;
+      padding: 10px 18px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #ar-share-btn { background: #27ae60; color: white; }
+    #ar-load-btn { background: #2980b9; color: white; }
+    #ar-gps-status {
+      position: absolute;
+      top: 155px;
+      left: 0; right: 0;
+      text-align: center;
+      color: #ffd700;
+      font-size: 13px;
+      text-shadow: 0 0 6px black;
+      z-index: 101;
+    }
     #ar-scale-label {
       color: white;
       font-size: 14px;
       font-weight: bold;
       min-width: 50px;
     }
+
+    /* ===================== USER BAR (in toolbar) ===================== */
+    .user-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-right: 10px;
+      padding-right: 10px;
+      border-right: 1px solid #555;
+    }
+    .user-avatar {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .user-name {
+      color: #ccc;
+      font-size: 13px;
+      max-width: 100px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .toolbar-link {
+      color: #aaa;
+      font-size: 12px;
+      text-decoration: none;
+    }
+    .toolbar-link:hover { color: white; }
+
+    /* ===================== HOMEPAGE ===================== */
+    .home-body {
+      overflow: auto;
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      min-height: 100vh;
+    }
+    .home-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .home-hero {
+      text-align: center;
+      max-width: 600px;
+    }
+    .home-title {
+      font-size: 3rem;
+      color: #fff;
+      margin-bottom: 10px;
+      letter-spacing: 2px;
+    }
+    .home-tagline {
+      font-size: 1.2rem;
+      color: #b8b8d0;
+      margin-bottom: 40px;
+      line-height: 1.6;
+    }
+    .home-features {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .feature-card {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 20px 16px;
+      width: 160px;
+      text-align: center;
+    }
+    .feature-icon { font-size: 2rem; display: block; margin-bottom: 8px; }
+    .feature-card h3 { color: #fff; font-size: 1rem; margin-bottom: 6px; }
+    .feature-card p { color: #aaa; font-size: 0.8rem; line-height: 1.4; }
+
+    .home-user {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .home-avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+    }
+    .home-username { color: #ddd; font-size: 1rem; }
+
+    .home-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-block;
+      padding: 14px 32px;
+      border-radius: 10px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: transform 0.1s, box-shadow 0.2s;
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #e74c3c, #c0392b);
+      color: white;
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,0.12);
+      color: #ddd;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.2); }
+    .btn-sm { padding: 8px 16px; font-size: 0.85rem; }
+
+    /* ===================== DESCRIPTION INPUT (AR overlay) ===================== */
+    #ar-description {
+      width: 180px;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      background: rgba(255,255,255,0.9);
+      color: #222;
+    }
+    #ar-description::placeholder { color: #888; }
+
+    /* ===================== NEARBY LIST (AR overlay) ===================== */
+    .nearby-list {
+      position: absolute;
+      bottom: 80px;
+      left: 10px;
+      right: 10px;
+      max-height: 180px;
+      overflow-y: auto;
+      z-index: 102;
+      background: rgba(0,0,0,0.7);
+      border-radius: 12px;
+      padding: 10px;
+    }
+    .nearby-list h4 { color: #fff; font-size: 14px; margin-bottom: 8px; }
+    .nearby-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px;
+      border-radius: 8px;
+      text-decoration: none;
+      color: #fff;
+      transition: background 0.15s;
+    }
+    .nearby-card:hover { background: rgba(255,255,255,0.1); }
+    .nearby-card img {
+      width: 48px; height: 48px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: #333;
+    }
+    .nearby-card-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .nearby-card-author { font-size: 12px; font-weight: bold; }
+    .nearby-card-desc { font-size: 11px; color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .nearby-card-stats { font-size: 11px; color: #aaa; }
+
+    /* ===================== GRAFFITI DETAIL PAGE ===================== */
+    .detail-page {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    .detail-nav {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .detail-image-wrap {
+      background: #111;
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .detail-image {
+      width: 100%;
+      display: block;
+      background-image:
+        linear-gradient(45deg, #333 25%, transparent 25%),
+        linear-gradient(-45deg, #333 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #333 75%),
+        linear-gradient(-45deg, transparent 75%, #333 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    }
+    .detail-info {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .detail-author {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .detail-avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+    }
+    .detail-author-name { color: #fff; font-weight: bold; font-size: 15px; }
+    .detail-date { color: #888; font-size: 13px; margin-left: auto; }
+    .detail-description { color: #ccc; font-size: 15px; line-height: 1.5; margin-bottom: 12px; }
+    .detail-actions { display: flex; align-items: center; gap: 16px; }
+    .btn-like {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      padding: 8px 16px;
+      color: #fff; font-size: 15px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-like:hover { background: rgba(255,255,255,0.15); }
+    .btn-like.liked { background: rgba(231,76,60,0.2); border-color: #e74c3c; }
+    .detail-comment-count { color: #aaa; font-size: 14px; }
+
+    .detail-comments {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .detail-comments h3 { color: #fff; margin-bottom: 12px; font-size: 16px; }
+    .comment-form {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .comment-form textarea {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.06);
+      color: #fff;
+      font-size: 14px;
+      resize: vertical;
+    }
+    .comment-form textarea::placeholder { color: #777; }
+    .comment-item {
+      border-top: 1px solid rgba(255,255,255,0.08);
+      padding: 10px 0;
+    }
+    .comment-item.comment-new { animation: fadeIn 0.3s; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; } }
+    .comment-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .comment-header strong { color: #ddd; font-size: 13px; }
+    .comment-avatar { width: 24px; height: 24px; border-radius: 50%; }
+    .comment-date { color: #777; font-size: 12px; margin-left: auto; }
+    .comment-text { color: #bbb; font-size: 14px; line-height: 1.4; }
+    .no-comments { color: #777; font-size: 14px; }
+    .comment-login-hint { color: #888; font-size: 14px; }
+    .comment-login-hint a { color: #e74c3c; }
     #crosshair {
       position: absolute;
       top: 0;
