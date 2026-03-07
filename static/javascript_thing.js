@@ -465,9 +465,11 @@ function initThreeScene() {
   const previewMat = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: 0.5,
-    side: THREE.DoubleSide
+    side: THREE.DoubleSide,
+    depthTest: false // Ensure it renders on top of the real world and reticle
   });
   previewMesh = new THREE.Mesh(previewGeo, previewMat);
+  previewMesh.renderOrder = 1; // Render after the reticle
   previewMesh.visible = false;
   previewMesh.matrixAutoUpdate = false;
   scene.add(previewMesh);
@@ -575,7 +577,6 @@ function placeDrawingAtHit(pose) {
   return mesh;
 }
 
-// Also apply rotation to the preview mesh
 function updatePreviewMesh(pose) {
   if (!previewMesh) return;
 
