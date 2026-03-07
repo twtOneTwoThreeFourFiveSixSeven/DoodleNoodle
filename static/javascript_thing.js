@@ -334,7 +334,16 @@ function commitImage() {
 }
 
 function removePlaceOverlay() {
-  if (placeOverlay) { placeOverlay.remove(); placeOverlay = null; }
+  if (placeOverlay) {
+    placeOverlay.remove();
+    placeOverlay = null;
+  }
+
+  // If we still have an active placingImage with savedData, it means we cancelled
+  // and need to restore the canvas to its state before the preview was drawn.
+  if (placingImage && placingImage.savedData) {
+    ctx.putImageData(placingImage.savedData, 0, 0);
+  }
 }
 
 // ===================== CLEAR / SAVE / RESIZE =====================
