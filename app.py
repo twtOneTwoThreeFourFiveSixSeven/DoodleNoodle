@@ -97,7 +97,7 @@ def app_page():
 @app.route("/api/graffiti", methods=["POST"])
 def save_graffiti():
     """Save graffiti with GPS location to MongoDB."""
-    if not graffiti_col:
+    if graffiti_col is None:
         return jsonify({"error": "Database not connected"}), 503
 
     data = request.get_json()
@@ -118,6 +118,13 @@ def save_graffiti():
         return jsonify({"error": "Image too large (max ~2MB)"}), 413
 
     height = data.get("height", 1.5)
+    surface_type = data.get("surfaceType", "wall")
+    
+    raw_quat = data.get("quaternion", [0, 0, 0, 1])
+    try:
+        quaternion = [float(q) for q in raw_quat]
+    except (TypeError, ValueError):
+        quaternion = [0, 0, 0, 1]
 
     doc = {
         "location": {
@@ -128,6 +135,8 @@ def save_graffiti():
         "scale": int(scale),
         "bearing": float(bearing),
         "height": float(height),
+        "surfaceType": surface_type,
+        "quaternion": quaternion,
         "description": data.get("description", "")[:500],
         "author": session.get("user", {}).get("name", "Anonymous"),
         "author_pic": session.get("user", {}).get("picture", ""),
@@ -143,7 +152,7 @@ def save_graffiti():
 @app.route("/api/graffiti/nearby")
 def get_nearby_graffiti():
     """Fetch graffiti within radius_m meters of lat/lng."""
-    if not graffiti_col:
+    if graffiti_col is None:
         return jsonify({"error": "Database not connected"}), 503
 
     lat = request.args.get("lat", type=float)
@@ -178,6 +187,8 @@ def get_nearby_graffiti():
             "scale": doc.get("scale", 50),
             "bearing": doc.get("bearing", 0),
             "height": doc.get("height", 1.5),
+            "surfaceType": doc.get("surfaceType", "wall"),
+            "quaternion": doc.get("quaternion", [0, 0, 0, 1]),
             "description": doc.get("description", ""),
             "author": doc.get("author", "Anonymous"),
             "likes": len(doc.get("likes", [])),
@@ -191,7 +202,7 @@ def get_nearby_graffiti():
 @app.route("/graffiti/<graffiti_id>")
 def graffiti_detail(graffiti_id):
     """View a single graffiti with comments and likes."""
-    if not graffiti_col:
+    if graffiti_col is None:
         return "Database not connected", 503
     try:
         doc = graffiti_col.find_one({"_id": ObjectId(graffiti_id)})
@@ -220,7 +231,7 @@ def graffiti_detail(graffiti_id):
 @app.route("/api/graffiti/<graffiti_id>/like", methods=["POST"])
 def toggle_like(graffiti_id):
     """Toggle like for the logged-in user."""
-    if not graffiti_col:
+    if graffiti_col is None:
         return jsonify({"error": "Database not connected"}), 503
     user = session.get("user")
     if not user:
@@ -248,7 +259,7 @@ def toggle_like(graffiti_id):
 @app.route("/api/graffiti/<graffiti_id>/comment", methods=["POST"])
 def add_comment(graffiti_id):
     """Add a comment to a graffiti."""
-    if not graffiti_col:
+    if graffiti_col is None:
         return jsonify({"error": "Database not connected"}), 503
     user = session.get("user")
     if not user:

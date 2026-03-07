@@ -41,17 +41,6 @@
     <div class="crosshair-v"></div>
   </div>
 
-  <!-- iOS AR permission gate -->
-  <div id="ios-ar-gate" style="display:none;">
-    <div class="ios-gate-box">
-      <h2>📸 Start AR Mode</h2>
-      <p>This requires camera, motion sensor, and location access.</p>
-      <button id="ios-start-ar-btn">Grant Access & Start</button>
-      <button id="ios-cancel-btn">Cancel</button>
-      <div id="ios-gate-status"></div>
-    </div>
-  </div>
-
   <!-- AR overlay -->
   <div id="ar-overlay">
     <div id="ar-version"
@@ -60,18 +49,27 @@
     <div id="ar-status">Point at a wall and tap to place your drawing</div>
     <div class="reticle-hint" id="reticle"></div>
     <div id="ar-scale-bar">
+      <div style="margin-bottom: 8px;">
+        <label>🧱 Surface:
+          <select id="ar-surface-mode" style="background:#333;color:white;border:1px solid #555;border-radius:4px;padding:4px;">
+            <option value="auto">Auto-detect</option>
+            <option value="wall">Force Wall (Vertical)</option>
+            <option value="floor">Force Floor (Flat)</option>
+          </select>
+        </label>
+      </div>
       <label>📏 Size: <input type="range" id="ar-scale-slider" min="10" max="300" value="50"></label>
     </div>
     <div id="ar-action-bar">
       <input type="text" id="ar-description" placeholder="Describe your graffiti..." maxlength="500">
-      <button id="ar-share-btn">🌍 Share Globally</button>
+      <button id="ar-share-btn">Confirm All Updates</button>
       <button id="ar-load-btn">📡 Load Nearby</button>
     </div>
     <div id="ar-gps-status"></div>
     <button id="ar-exit-btn">← Back to Draw</button>
   </div>
 
-  <script src="{{ url_for('static', filename='javascript_thing.js') }}"></script>
+  <script src="{{ url_for('static', filename='javascript_thing.js', v='2.0') }}"></script>
 </body>
 
 </html>
