@@ -363,6 +363,7 @@ let reticleModel = null;
 let previewMesh = null;
 let lastHitPose = null;
 let arScaleCm = 50; // default 50cm
+let arRotationDeg = 0;         // user rotation for AR placement
 let arStartBearing = 0;        // compass heading when AR started
 let arStartLat = null;
 let arStartLng = null;
@@ -405,6 +406,22 @@ if (arScaleSlider) {
       const radius = (arScaleCm / 100) / 2;
       reticleModel.scale.set(radius / 0.07, radius / 0.07, radius / 0.07);
     }
+  });
+}
+
+// Rotation slider
+const arRotateSlider = document.getElementById("ar-rotate-slider");
+const arRotateLabel = document.getElementById("ar-rotate-label");
+
+if (arRotateSlider) {
+  arRotateSlider.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
+  arRotateSlider.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: false });
+  arRotateSlider.addEventListener("click", (e) => e.stopPropagation());
+  arRotateSlider.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+  arRotateSlider.addEventListener("input", () => {
+    arRotationDeg = parseInt(arRotateSlider.value);
+    if (arRotateLabel) arRotateLabel.textContent = arRotationDeg + "°";
   });
 }
 
@@ -858,6 +875,8 @@ async function loadNearbyGraffiti() {
     scene.add(folder);
 
     for (const item of items) {
+      if (scene.getObjectByName("global_" + item.id)) continue;
+
       const { image, scale, bearing, description, height, surfaceType, quaternion, id } = item;
 
       // Decode the base64 image
@@ -869,57 +888,47 @@ async function loadNearbyGraffiti() {
       graffitiTexture.needsUpdate = true;
 
       const aspect = img.width / img.height;
-      const planeWidth = scale / 100;
+      const planeWidth = (scale || 50) / 100;
       const planeHeight = planeWidth / aspect;
 
       const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
       const material = new THREE.MeshBasicMaterial({
         map: graffitiTexture,
         transparent: true,
-        side: THREE.DoubleSide
+        side: THREE.DoubleSide,
+        depthTest: true
       });
 
       const mesh = new THREE.Mesh(geometry, material);
+      mesh.name = "global_" + id;
 
-      // Compute the position and orientation from the saved data
-      const position = new THREE.Vector3(item.lng, height, -item.lat);
-      const quaternionFromData = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
+      // Compute position relative to ar start location
+      const dLat = item.lat - arStartLat;
+      const dLng = item.lng - arStartLng;
+      const mLat = 111320;
+      const mLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
+      const nM = dLat * mLat;
+      const eM = dLng * mLng;
+      const bRad = arStartBearing * Math.PI / 180;
+      const sX = eM * Math.cos(bRad) - nM * Math.sin(bRad);
+      const sZ = -eM * Math.sin(bRad) - nM * Math.cos(bRad);
 
-      mesh.position.copy(position);
-      mesh.quaternion.copy(quaternionFromData);
-      mesh.scale.set(1, 1, 1);
+      mesh.position.set(sX, height || 1.5, sZ);
 
-      folder.add(mesh);
+      // Restore original rotation and compensate for local compass bearing difference
+      if (quaternion) {
+        mesh.quaternion.set(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
+        const itemBRad = ((bearing || 0) - arStartBearing) * Math.PI / 180;
+        mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), itemBRad));
+      } else {
+        mesh.rotation.y = ((bearing || 0) - arStartBearing) * Math.PI / 180;
+        if (surfaceType === "floor") mesh.rotation.x = -Math.PI / 2;
+      }
+
+      mesh.updateMatrixWorld();
+      mesh.matrixAutoUpdate = false;
+      scene.add(mesh);
     }
-
-    // Center the camera on the folder with an appropriate distance
-    const box = new THREE.Box3().setFromObject(folder);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-
-    folder.geometry.computeBoundingBox();
-    const padding = 0.1;
-    const boxSize = Math.max(size.x, size.y, size.z) + padding;
-
-    folder.position.set(-center.x, -center.y, -center.z);
-
-    camera.position.set(-center.x, -center.y + boxSize * 1.5, -center.z + boxSize);
-    camera.lookAt(center);
-
-    // Adjust the camera's near and far planes based on the bounding box
-    camera.near = box.min.distanceTo(box.max) / 100;
-    camera.far = 1000;
-    camera.updateProjectionMatrix();
-
-    // Optionally, add some ambient light and a directional light for better visibility
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(1, 1, 1).normalize();
-    scene.add(dirLight);
 
     arStatus.textContent = "Loaded " + items.length + " graffiti pieces nearby.";
   } catch (err) {
