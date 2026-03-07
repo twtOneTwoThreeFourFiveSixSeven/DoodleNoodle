@@ -41,17 +41,6 @@
     <div class="crosshair-v"></div>
   </div>
 
-  <!-- iOS AR permission gate -->
-  <div id="ios-ar-gate" style="display:none;">
-    <div class="ios-gate-box">
-      <h2>📸 Start AR Mode</h2>
-      <p>This requires camera, motion sensor, and location access.</p>
-      <button id="ios-start-ar-btn">Grant Access & Start</button>
-      <button id="ios-cancel-btn">Cancel</button>
-      <div id="ios-gate-status"></div>
-    </div>
-  </div>
-
   <!-- AR overlay -->
   <div id="ar-overlay">
     <div id="ar-version"
@@ -71,7 +60,7 @@
     <button id="ar-exit-btn">← Back to Draw</button>
   </div>
 
-  <script src="{{ url_for('static', filename='javascript_thing.js') }}"></script>
+  <script src="{{ url_for('static', filename='javascript_thing.js', v='1.3') }}"></script>
 </body>
 
 </html>
