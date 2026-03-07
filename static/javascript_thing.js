@@ -231,15 +231,13 @@ function renderPlacingImage() {
     const stampBtn = document.createElement("button");
     stampBtn.textContent = "✅ Stamp";
     stampBtn.style.cssText = "position:absolute;bottom:70px;left:50%;transform:translateX(-50%);padding:10px 24px;border:none;border-radius:6px;background:#27ae60;color:white;font-size:16px;font-weight:bold;cursor:pointer;z-index:51;";
-    stampBtn.addEventListener("click", commitImage);
-    stampBtn.addEventListener("touchend", (e) => { e.stopPropagation(); commitImage(); });
+    stampBtn.addEventListener("click", (e) => { e.preventDefault(); commitImage(); });
     placeOverlay.appendChild(stampBtn);
 
     const cancelBtn = document.createElement("button");
     cancelBtn.textContent = "❌ Cancel";
     cancelBtn.style.cssText = "position:absolute;bottom:70px;left:calc(50% + 90px);padding:10px 24px;border:none;border-radius:6px;background:#e74c3c;color:white;font-size:16px;font-weight:bold;cursor:pointer;z-index:51;";
-    cancelBtn.addEventListener("click", () => { removePlaceOverlay(); placingImage = null; });
-    cancelBtn.addEventListener("touchend", (e) => { e.stopPropagation(); removePlaceOverlay(); placingImage = null; });
+    cancelBtn.addEventListener("click", (e) => { e.preventDefault(); removePlaceOverlay(); placingImage = null; });
     placeOverlay.appendChild(cancelBtn);
 
     document.body.appendChild(placeOverlay);
@@ -314,35 +312,46 @@ function resizeImage(e) {
 }
 
 function commitImage() {
-  if (!placingImage) return;
-  if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
-  ctx.globalCompositeOperation = "source-over";
-  ctx.globalAlpha = 1;
+  try {
+    if (!placingImage) return;
+    if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
 
-  // Commit with rotation
-  const { img, x, y, w, h, rotation } = placingImage;
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate((rotation || 0) * Math.PI / 180);
-  ctx.drawImage(img, -w / 2, -h / 2, w, h);
-  ctx.restore();
+    // Commit with rotation
+    const { img, x, y, w, h, rotation } = placingImage;
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((rotation || 0) * Math.PI / 180);
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    ctx.restore();
 
-  placingImage = null;
-  removePlaceOverlay(true);
+    placingImage = null;
+    removePlaceOverlay(true);
+  } catch (err) {
+    console.error("Error in commitImage:", err);
+    alert("Error in commitImage: " + err.message);
+  }
 }
 
 function removePlaceOverlay(committed = false) {
-  if (placeOverlay) {
-    placeOverlay.remove();
-    placeOverlay = null;
-  }
+  console.log("Removing place overlay");
+  try {
+    if (placeOverlay) {
+      placeOverlay.remove();
+      placeOverlay = null;
+    }
 
-  // If we still have an active placingImage with savedData and we didn't just commit, 
-  // it means we cancelled and need to restore the canvas to its state before the preview.
-  if (!committed && placingImage && placingImage.savedData) {
-    ctx.putImageData(placingImage.savedData, 0, 0);
+    // If we still have an active placingImage with savedData and we didn't just commit, 
+    // it means we cancelled and need to restore the canvas to its state before the preview.
+    if (!committed && placingImage && placingImage.savedData) {
+      ctx.putImageData(placingImage.savedData, 0, 0);
+    }
+  } catch (err) {
+    console.error("Error in removePlaceOverlay:", err);
+    alert("Error in removePlaceOverlay: " + err.message);
   }
 }
 
