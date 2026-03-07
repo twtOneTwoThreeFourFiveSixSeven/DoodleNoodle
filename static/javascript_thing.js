@@ -382,6 +382,7 @@ const reticle = document.getElementById("reticle");
 let xrSession = null;
 let xrRefSpace = null;
 let xrHitTestSource = null;
+let nearbyInterval = null;
 let gl = null;
 let renderer = null;
 let scene = null;
@@ -736,11 +737,18 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     const viewerSpace = await xrSession.requestReferenceSpace("viewer");
     xrHitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
 
+    // Auto-load any graffiti placed near the user's current GPS position,
+    // then keep polling every 8 seconds as the user walks around.
+    loadNearbyGraffiti();
+    nearbyInterval = setInterval(loadNearbyGraffiti, 8000);
+
     xrSession.addEventListener("select", () => {
       if (lastHitPose) placeDrawingAtHit(lastHitPose);
     });
 
     xrSession.addEventListener("end", () => {
+      clearInterval(nearbyInterval);
+      nearbyInterval = null;
       arOverlay.style.display = "none";
       document.getElementById("draw-toolbar").style.display = "flex";
       document.getElementById("canvas").style.display = "block";
@@ -887,68 +895,83 @@ document.getElementById("ar-share-btn").addEventListener("click", async () => {
 document.getElementById("ar-load-btn").addEventListener("click", () => loadNearbyGraffiti());
 
 async function loadNearbyGraffiti() {
-  if (userLat === null || userLng === null) return;
+  // Must have an active AR scene and known GPS anchor point
+  if (!scene || arStartLat === null || arStartLng === null) {
+    console.log("loadNearby: skipped — scene:", !!scene, "arStartLat:", arStartLat, "arStartLng:", arStartLng);
+    return;
+  }
+  if (userLat === null || userLng === null) {
+    console.log("loadNearby: skipped — no user GPS");
+    return;
+  }
+
   try {
     const resp = await fetch(`/api/graffiti/nearby?lat=${userLat}&lng=${userLng}&radius=200`);
     if (!resp.ok) return;
     const items = await resp.json();
-    if (items.length === 0) {
-      alert("No nearby graffiti found.");
-      return;
-    }
+    console.log("loadNearby: got", items.length, "items");
 
-    // Create a folder to group nearby graffiti
-    const folder = new THREE.Group();
-    folder.name = "NearbyGraffiti";
-    scene.add(folder);
+    const mLat = 111320;
+    const mLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
+    const bRad = arStartBearing * Math.PI / 180;
+    let loaded = 0;
 
     for (const item of items) {
+      // Skip pieces already in the scene
       if (scene.getObjectByName("global_" + item.id)) continue;
 
-      const { image, scale, bearing, description, height, surfaceType, quaternion, id } = item;
+      const { image, scale, bearing, height, surfaceType, quaternion, id } = item;
 
-      // Decode the base64 image
       const img = new Image();
+      img.crossOrigin = "anonymous";
       img.src = image;
-      await new Promise((resolve) => { img.onload = resolve; });
+      try {
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+        });
+      } catch (e) {
+        console.warn("Failed to load image for graffiti", id, e);
+        continue;
+      }
 
-      const graffitiTexture = new THREE.Texture(img);
-      graffitiTexture.needsUpdate = true;
+      // CanvasTexture handles power-of-two scaling automatically
+      const tex = new THREE.CanvasTexture(img);
 
       const aspect = img.width / img.height;
       const planeWidth = (scale || 50) / 100;
       const planeHeight = planeWidth / aspect;
 
-      const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
-      const material = new THREE.MeshBasicMaterial({
-        map: graffitiTexture,
-        transparent: true,
-        side: THREE.DoubleSide,
-        depthTest: true
-      });
-
-      const mesh = new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(planeWidth, planeHeight),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: true })
+      );
       mesh.name = "global_" + id;
 
-      // Compute position relative to ar start location
-      const dLat = item.lat - arStartLat;
-      const dLng = item.lng - arStartLng;
-      const mLat = 111320;
-      const mLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
-      const nM = dLat * mLat;
-      const eM = dLng * mLng;
-      const bRad = arStartBearing * Math.PI / 180;
-      const sX = eM * Math.cos(bRad) - nM * Math.sin(bRad);
+      // --- Position: convert saved GPS back into viewer's XR local space ---
+      // The saved lat/lng is the real-world point where the graffiti sits.
+      // arStartLat/Lng is where THIS viewer began their XR session (origin = 0,0,0).
+      // We convert the GPS delta to a north/east offset in metres, then rotate
+      // into the viewer's local XR frame using their starting compass bearing.
+      const nM = (item.lat - arStartLat) * mLat;    // metres northward
+      const eM = (item.lng - arStartLng) * mLng;    // metres eastward
+      // Viewer XR frame: +X = right (bearing+90), -Z = forward (bearing)
+      const sX =  eM * Math.cos(bRad) - nM * Math.sin(bRad);
       const sZ = -eM * Math.sin(bRad) - nM * Math.cos(bRad);
-
       mesh.position.set(sX, height || 1.5, sZ);
 
-      // Restore original rotation and compensate for local compass bearing difference
-      if (quaternion) {
+      // --- Orientation: restore saved quaternion then compensate for the
+      //     difference between creator's and viewer's XR reference frames.
+      //     Both frames share Y-up; they differ only by a Y-rotation equal
+      //     to (creatorBearing - viewerBearing). ---
+      if (quaternion && quaternion.length === 4) {
         mesh.quaternion.set(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
-        const itemBRad = ((bearing || 0) - arStartBearing) * Math.PI / 180;
-        mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), itemBRad));
+        const frameDelta = ((bearing || 0) - arStartBearing) * Math.PI / 180;
+        mesh.quaternion.premultiply(
+          new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), frameDelta)
+        );
       } else {
+        // Fallback for legacy records without a quaternion
         mesh.rotation.y = ((bearing || 0) - arStartBearing) * Math.PI / 180;
         if (surfaceType === "floor") mesh.rotation.x = -Math.PI / 2;
       }
@@ -956,12 +979,21 @@ async function loadNearbyGraffiti() {
       mesh.updateMatrixWorld();
       mesh.matrixAutoUpdate = false;
       scene.add(mesh);
+      loaded++;
     }
 
-    arStatus.textContent = "Loaded " + items.length + " graffiti pieces nearby.";
+    if (gpsStatus) {
+      if (items.length === 0) {
+        gpsStatus.textContent = "No graffiti nearby (0 from server)";
+      } else if (loaded > 0) {
+        gpsStatus.textContent = `🎨 ${loaded} piece${loaded > 1 ? "s" : ""} loaded nearby`;
+      } else {
+        gpsStatus.textContent = `${items.length} found but already loaded`;
+      }
+    }
   } catch (err) {
-    console.error(err);
-    alert("Failed to load nearby graffiti.");
+    console.error("loadNearbyGraffiti:", err);
+    if (gpsStatus) gpsStatus.textContent = "❌ Load error: " + err.message;
   }
 }
 

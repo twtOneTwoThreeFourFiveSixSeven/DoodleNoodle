@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Create Post — GoGoGraffiti</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+</head>
+
+<body>
+
+  <!-- Drawing toolbar -->
+  <div class="toolbar" id="draw-toolbar">
+    <div class="user-bar">
+      {% if user and user.picture %}
+      <img src="{{ user.picture }}" alt="" class="user-avatar">
+      {% endif %}
+      <span class="user-name">{{ user.name or user.email or 'Guest' }}</span>
+      <a href="{{ url_for('logout') }}" class="toolbar-link">Logout</a>
+      <a href="{{ url_for('home') }}" class="toolbar-link">Home</a>
+    </div>
+    <button id="pen-btn" class="active">✏️ Pen</button>
+    <button id="eraser-btn">🧹 Eraser</button>
+    <label>Size: <input type="range" id="size-slider" min="1" max="50" value="4"></label>
+    <span id="size-label" style="color:white;">4</span>
+    <input type="color" id="color-picker" value="#000000" title="Pick a color">
+    <input type="text" id="hex-input" value="#000000" maxlength="7" placeholder="#000000">
+    <button id="img-btn">🖼️ Image</button>
+    <input type="file" id="img-upload" accept="image/png,image/jpeg" style="display:none;">
+    <button id="clear-btn">🗑️ Clear</button>
+    <button id="save-btn">💾 Save</button>
+    <button id="post-open-btn">🚀 Post</button>
+  </div>
+
+  <canvas id="canvas"></canvas>
+  <div id="crosshair">
+    <div class="crosshair-h"></div>
+    <div class="crosshair-v"></div>
+  </div>
+
+  <!-- Post panel -->
+  <div id="post-panel">
+    <h2>Share Your Piece</h2>
+    <input type="text" id="post-title" placeholder="Title..." maxlength="100">
+    <textarea id="post-description" placeholder="Describe your graffiti..." maxlength="500"></textarea>
+    <div class="post-panel-actions">
+      <button id="post-submit-btn">🚀 Post</button>
+      <button id="post-cancel-btn">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Hidden AR elements required by javascript_thing.js -->
+  <div id="ar-overlay" style="display:none;">
+    <div id="ar-status"></div>
+    <div id="reticle"></div>
+    <select id="ar-surface-mode">
+      <option value="auto">Auto</option>
+      <option value="wall">Wall</option>
+      <option value="floor">Floor</option>
+    </select>
+    <input type="range" id="ar-scale-slider" min="10" max="300" value="50">
+    <span id="ar-scale-label">50cm</span>
+    <input type="range" id="ar-rotate-slider" min="-180" max="180" value="0">
+    <span id="ar-rotate-label">0°</span>
+    <input type="text" id="ar-description">
+    <button id="ar-share-btn"></button>
+    <button id="ar-load-btn"></button>
+    <div id="ar-gps-status"></div>
+    <button id="ar-exit-btn"></button>
+    <div id="debug-info"></div>
+  </div>
+  <button id="ar-btn" style="display:none;"></button>
+
+  <script src="{{ url_for('static', filename='javascript_thing.js') }}"></script>
+  <script>
+    const postPanel = document.getElementById("post-panel");
+
+    document.getElementById("post-open-btn").addEventListener("click", () => {
+      postPanel.classList.add("open");
+    });
+    document.getElementById("post-cancel-btn").addEventListener("click", () => {
+      postPanel.classList.remove("open");
+    });
+    document.getElementById("post-submit-btn").addEventListener("click", async () => {
+      const title = document.getElementById("post-title").value.trim();
+      const description = document.getElementById("post-description").value.trim();
+      const imageData = canvas.toDataURL("image/png");
+      // TODO: wire up to post API
+      console.log("Post:", { title, description, imageData });
+    });
+  </script>
+
+</body>
+
+</html>
