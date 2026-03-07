@@ -333,6 +333,10 @@ function commitImage() {
   removePlaceOverlay();
 }
 
+function removePlaceOverlay() {
+  if (placeOverlay) { placeOverlay.remove(); placeOverlay = null; }
+}
+
 // ===================== CLEAR / SAVE / RESIZE =====================
 document.getElementById("clear-btn").addEventListener("click", () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
