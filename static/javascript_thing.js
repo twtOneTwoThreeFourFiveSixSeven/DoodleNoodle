@@ -568,17 +568,19 @@
         const mesh = new THREE.Mesh(geometry, material);
 
         // Offset slightly off the wall to prevent z-fighting
-        const offsetPoint = point.clone().add(normal.clone().multiplyScalar(0.01));
+        const offsetPoint = point.clone().add(normal.clone().multiplyScalar(0.005));
         mesh.position.copy(offsetPoint);
 
-        // Face perpendicular to the wall — look along the surface normal
-        const lookTarget = offsetPoint.clone().add(normal);
-        mesh.lookAt(lookTarget);
+        // Align the plane to lie flat on the wall surface
+        // PlaneGeometry's default normal is (0,0,1)
+        // We need to rotate it so (0,0,1) aligns with the wall's outward normal
+        const defaultNormal = new THREE.Vector3(0, 0, 1);
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultNormal, normal.normalize());
+        mesh.quaternion.copy(quaternion);
 
         sc.add(mesh);
       }
 
-      // Replace the old placeDrawingInScene with this
       function placeDrawingInFront(sc, cam) {
         const drawingTexture = new THREE.CanvasTexture(canvas);
         drawingTexture.needsUpdate = true;
@@ -602,28 +604,13 @@
         const pos = cam.position.clone().add(dir.multiplyScalar(2));
         mesh.position.copy(pos);
 
-        // Orient perpendicular to the wall, NOT facing the camera
-        // Snap to nearest cardinal wall direction
-        const absX = Math.abs(dir.x);
-        const absY = Math.abs(dir.y);
-        const absZ = Math.abs(dir.z);
+        // The wall's outward normal points back toward the camera
+        const wallNormal = dir.clone().negate().normalize();
 
-        const wallNormal = new THREE.Vector3();
-
-        if (absY > absX && absY > absZ) {
-          // Looking mostly up/down → place on floor/ceiling
-          wallNormal.set(0, dir.y > 0 ? -1 : 1, 0);
-        } else if (absX > absZ) {
-          // Looking mostly left/right → place on side wall
-          wallNormal.set(dir.x > 0 ? -1 : 1, 0, 0);
-        } else {
-          // Looking mostly forward/back → place on front/back wall
-          wallNormal.set(0, 0, dir.z > 0 ? -1 : 1);
-        }
-
-        // Face outward from the wall (along the normal)
-        const lookTarget = pos.clone().add(wallNormal);
-        mesh.lookAt(lookTarget);
+        // Align the plane so it faces the camera (flat against the virtual wall)
+        const defaultNormal = new THREE.Vector3(0, 0, 1);
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultNormal, wallNormal);
+        mesh.quaternion.copy(quaternion);
 
         sc.add(mesh);
       }
