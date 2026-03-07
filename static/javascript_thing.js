@@ -9,6 +9,22 @@
       canvas.height = window.innerHeight - toolbarHeight;
       canvas.style.width = canvas.width + "px";
       canvas.style.height = canvas.height + "px";
+
+      // Calculate canvas center in pixels
+      const centerX = Math.floor(canvas.width / 2);
+      const centerY = Math.floor(canvas.height / 2);
+
+      // Offset the grid so an intersection lands exactly at center
+      const offsetX = centerX % 10;
+      const offsetY = centerY % 10;
+      canvas.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
+
+      // Position the crosshair relative to the canvas, not the viewport
+      const crosshair = document.getElementById("crosshair");
+      if (crosshair) {
+        crosshair.style.top = toolbarHeight + "px";
+        crosshair.style.height = canvas.height + "px";
+      }
     }
     resizeCanvas();
 
@@ -31,7 +47,6 @@
       ctx.lineWidth = brushSize; ctx.lineCap = "round"; ctx.lineJoin = "round";
 
       if (erasing) {
-        // Erase to transparency instead of painting white
         ctx.globalCompositeOperation = "destination-out";
         ctx.strokeStyle = "rgba(0,0,0,1)";
       } else {
@@ -59,58 +74,63 @@
     document.getElementById("size-slider").addEventListener("input", (e) => {
       brushSize = parseInt(e.target.value); document.getElementById("size-label").textContent = brushSize;
     });
+
     // ===================== COLOR PICKER =====================
     const colorPicker = document.getElementById("color-picker");
     const hexInput = document.getElementById("hex-input");
 
-    colorPicker.addEventListener("input", (e) => {
-      currentColor = e.target.value;
-      hexInput.value = currentColor;
-    });
-    hexInput.addEventListener("change", (e) => {
-      let val = e.target.value.trim();
-      if (!val.startsWith("#")) val = "#" + val;
-      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
-        currentColor = val;
-        colorPicker.value = val;
-      } else {
-        e.target.value = currentColor;
-      }
-    });
+    if (colorPicker) {
+      colorPicker.addEventListener("input", (e) => {
+        currentColor = e.target.value;
+        if (hexInput) hexInput.value = currentColor;
+      });
+    }
+    if (hexInput) {
+      hexInput.addEventListener("change", (e) => {
+        let val = e.target.value.trim();
+        if (!val.startsWith("#")) val = "#" + val;
+        if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+          currentColor = val;
+          if (colorPicker) colorPicker.value = val;
+        } else {
+          e.target.value = currentColor;
+        }
+      });
+    }
 
     // ===================== IMAGE INSERT =====================
     const imgBtn = document.getElementById("img-btn");
     const imgUpload = document.getElementById("img-upload");
 
-    imgBtn.addEventListener("click", () => imgUpload.click());
-    imgUpload.addEventListener("change", (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const img = new Image();
-        img.onload = () => {
-          // Scale image to fit within 40% of canvas, preserving aspect ratio
-          const maxW = canvas.width * 0.4;
-          const maxH = canvas.height * 0.4;
-          let w = img.width, h = img.height;
-          if (w > maxW) { h *= maxW / w; w = maxW; }
-          if (h > maxH) { w *= maxH / h; h = maxH; }
-          placingImage = { img, w, h, x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, dragging: false };
-          renderPlacingImage();
+    if (imgBtn && imgUpload) {
+      imgBtn.addEventListener("click", () => imgUpload.click());
+      imgUpload.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.onload = () => {
+            const maxW = canvas.width * 0.4;
+            const maxH = canvas.height * 0.4;
+            let w = img.width, h = img.height;
+            if (w > maxW) { h *= maxW / w; w = maxW; }
+            if (h > maxH) { w *= maxH / h; h = maxH; }
+            placingImage = { img, w, h, x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, dragging: false };
+            renderPlacingImage();
+          };
+          img.src = ev.target.result;
         };
-        img.src = ev.target.result;
-      };
-      reader.readAsDataURL(file);
-      imgUpload.value = "";
-    });
+        reader.readAsDataURL(file);
+        imgUpload.value = "";
+      });
+    }
 
     // Overlay UI for positioning the image before stamping it
     let placeOverlay = null;
 
     function renderPlacingImage() {
       if (!placingImage) return;
-      // Create a floating overlay for drag-to-position
       if (!placeOverlay) {
         placeOverlay = document.createElement("div");
         placeOverlay.id = "place-overlay";
@@ -136,7 +156,6 @@
 
         document.body.appendChild(placeOverlay);
 
-        // Drag handlers
         placeOverlay.addEventListener("mousedown", startDragImage);
         placeOverlay.addEventListener("mousemove", dragImage);
         placeOverlay.addEventListener("mouseup", stopDragImage);
@@ -150,13 +169,11 @@
 
     function drawPreview() {
       if (!placingImage) return;
-      // Draw current canvas + preview image
       const saved = ctx.getImageData(0, 0, canvas.width, canvas.height);
       ctx.putImageData(saved, 0, 0);
       ctx.globalAlpha = 0.7;
       ctx.drawImage(placingImage.img, placingImage.x, placingImage.y, placingImage.w, placingImage.h);
       ctx.globalAlpha = 1;
-      // Store saved data so we can redraw
       placingImage.savedData = saved;
     }
 
@@ -208,8 +225,8 @@
       if (placeOverlay) { placeOverlay.remove(); placeOverlay = null; }
     }
 
+    // ===================== CLEAR / SAVE / RESIZE =====================
     document.getElementById("clear-btn").addEventListener("click", () => {
-      // Clear to transparent instead of white
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     });
     document.getElementById("save-btn").addEventListener("click", () => {
@@ -236,7 +253,7 @@
     let camera = null;
     let reticleModel = null;
     let lastHitPose = null;
-    let arScaleCm = 50; // default 50cm
+    let arScaleCm = 50;
 
     // Scale slider
     const arScaleSlider = document.getElementById("ar-scale-slider");
@@ -244,18 +261,20 @@
     const reticleEl = document.getElementById("reticle");
 
     if (arScaleSlider) {
+      arScaleSlider.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
+      arScaleSlider.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: false });
+      arScaleSlider.addEventListener("click", (e) => e.stopPropagation());
+      arScaleSlider.addEventListener("pointerdown", (e) => e.stopPropagation());
+
       arScaleSlider.addEventListener("input", () => {
         arScaleCm = parseInt(arScaleSlider.value);
 
-        // Update label
         if (arScaleLabel) {
           arScaleLabel.textContent = arScaleCm >= 100
             ? (arScaleCm / 100).toFixed(1) + "m"
             : arScaleCm + "cm";
         }
 
-        // Update the HTML reticle circle diameter
-        // Map 10cm–300cm → 30px–250px
         const minPx = 30;
         const maxPx = 250;
         const diameter = minPx + ((arScaleCm - 10) / (300 - 10)) * (maxPx - minPx);
@@ -264,7 +283,6 @@
           reticleEl.style.height = diameter + "px";
         }
 
-        // Also update the Three.js reticle ring if in WebXR mode
         if (reticleModel) {
           const radius = (arScaleCm / 100) / 2;
           reticleModel.scale.set(radius / 0.07, radius / 0.07, radius / 0.07);
@@ -277,7 +295,6 @@
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-      // Reticle — a ring that shows where surfaces are detected
       const ringGeo = new THREE.RingGeometry(0.05, 0.07, 32).rotateX(-Math.PI / 2);
       const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
       reticleModel = new THREE.Mesh(ringGeo, ringMat);
@@ -286,13 +303,13 @@
       scene.add(reticleModel);
     }
 
-    // Create a plane with the drawing texture, oriented to face the detected surface
+    // Place drawing at WebXR hit point
     function placeDrawingAtHit(pose) {
       const drawingTexture = new THREE.CanvasTexture(canvas);
       drawingTexture.needsUpdate = true;
 
       const aspect = canvas.width / canvas.height;
-      const planeWidth = arScaleCm / 100; // convert cm to meters
+      const planeWidth = arScaleCm / 100;
       const planeHeight = planeWidth / aspect;
 
       const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
@@ -305,7 +322,6 @@
       const mesh = new THREE.Mesh(geometry, material);
       mesh.matrixAutoUpdate = false;
 
-      // Position the drawing at the hit point, oriented along the surface
       const matrix = new THREE.Matrix4();
       matrix.fromArray(pose.transform.matrix);
 
@@ -319,14 +335,11 @@
       mesh.updateMatrix();
 
       scene.add(mesh);
-      arStatus.textContent = "✅ Placed at " + arScaleCm + "cm wide! Tap again to place more.";
     }
 
     // Start WebXR AR session
     document.getElementById("ar-btn").addEventListener("click", async () => {
-      // Check WebXR support
       if (!navigator.xr) {
-        // Fallback: simple camera overlay (for iOS / unsupported browsers)
         startFallbackAR();
         return;
       }
@@ -340,7 +353,6 @@
       try {
         initThreeScene();
 
-        // Create WebGL renderer
         const arCanvas = document.createElement("canvas");
         gl = arCanvas.getContext("webgl", { xrCompatible: true });
         renderer = new THREE.WebGLRenderer({ canvas: arCanvas, context: gl, alpha: true });
@@ -348,10 +360,9 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.xr.enabled = true;
 
-        // Request AR session with hit-test
         xrSession = await navigator.xr.requestSession("immersive-ar", {
           requiredFeatures: ["hit-test"],
-          optionalFeatures: ["dom-overlay"],
+          optionalFeatures: ["dom-overlay", "anchors"],
           domOverlay: { root: arOverlay }
         });
 
@@ -366,7 +377,6 @@
         const viewerSpace = await xrSession.requestReferenceSpace("viewer");
         xrHitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
 
-        // Tap to place
         xrSession.addEventListener("select", () => {
           if (lastHitPose) {
             placeDrawingAtHit(lastHitPose);
@@ -380,7 +390,6 @@
           xrSession = null;
         });
 
-        // Render loop
         renderer.setAnimationLoop((timestamp, frame) => {
           if (!frame) return;
 
@@ -487,37 +496,49 @@
       }
       window.addEventListener("deviceorientation", onOrientation, true);
 
-      // Helper: convert device orientation angles to Three.js quaternion
-      // Uses the standard ZXY Euler convention for device orientation
-      function setDeviceQuaternion(camera, alpha, beta, gamma, screenOrientation) {
+      function setDeviceQuaternion(cam, alpha, beta, gamma, screenOrientation) {
         const degToRad = Math.PI / 180;
         const euler = new THREE.Euler();
         const q0 = new THREE.Quaternion();
-        const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -90° around X
+        const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
 
         euler.set(beta * degToRad, alpha * degToRad, -gamma * degToRad, "YXZ");
-        camera.quaternion.setFromEuler(euler);
-        camera.quaternion.multiply(q1);
-        camera.quaternion.multiply(q0.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -screenOrientation * degToRad));
+        cam.quaternion.setFromEuler(euler);
+        cam.quaternion.multiply(q1);
+        cam.quaternion.multiply(q0.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -screenOrientation * degToRad));
       }
 
       // ---- Tap to place drawing in 3D ----
       const fb3d = document.getElementById("fallback-3d");
-      fb3d.addEventListener("click", (e) => {
-        placeDrawingInScene(fbScene, fbCamera, e);
-      });
+
+      function handleFallbackPlace(evt) {
+        // Don't place if tap was on UI elements
+        const target = document.elementFromPoint(evt.clientX || evt.pageX, evt.clientY || evt.pageY);
+        if (target && (
+          target.closest("#ar-scale-bar") ||
+          target.closest("#ar-exit-btn") ||
+          target.closest("#ar-status")
+        )) {
+          return;
+        }
+
+        placeDrawingInScene(fbScene, fbCamera);
+      }
+
+      fb3d.addEventListener("click", handleFallbackPlace);
       fb3d.addEventListener("touchend", (e) => {
         if (e.target.tagName === "BUTTON") return;
         const touch = e.changedTouches[0];
-        placeDrawingInScene(fbScene, fbCamera, touch);
+        handleFallbackPlace(touch);
       });
 
-      function placeDrawingInScene(sc, cam, evt) {
+      function placeDrawingInScene(sc, cam) {
         const drawingTexture = new THREE.CanvasTexture(canvas);
         drawingTexture.needsUpdate = true;
 
+        const currentScale = parseInt(arScaleSlider.value);
         const aspect = canvas.width / canvas.height;
-        const planeWidth = arScaleCm / 100;
+        const planeWidth = currentScale / 100;
         const planeHeight = planeWidth / aspect;
 
         const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
@@ -560,7 +581,6 @@
       document.getElementById("canvas").style.display = "block";
       const vid = document.getElementById("fallback-video");
       if (vid && vid.srcObject) { vid.srcObject.getTracks().forEach(t => t.stop()); }
-      // Clear placed drawings from scene
       if (fbScene) {
         while (fbScene.children.length > 0) {
           const obj = fbScene.children[0];

@@ -48,17 +48,12 @@
       text-align: center;
     }
     #canvas {
-      display: block;
       cursor: crosshair;
-      border: none;
-      /* Checkerboard pattern to visualize transparency */
-      background-image:
-        linear-gradient(45deg, #ddd 25%, transparent 25%),
-        linear-gradient(-45deg, #ddd 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, #ddd 75%),
-        linear-gradient(-45deg, transparent 75%, #ddd 75%);
+      border: 1px solid #ccc;
+      /* Clean square checkerboard */
+      background-image: repeating-conic-gradient(#ddd 0% 25%, transparent 0% 50%);
       background-size: 20px 20px;
-      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+      background-position: 50% calc(50%);
     }
     #ar-btn { background: #e74c3c; font-weight: bold; }
     #ar-btn:hover { background: #c0392b; }
@@ -81,7 +76,12 @@
       cursor: pointer;
       z-index: 101;
     }
-    #ar-exit-btn { left: 20px; background: rgba(255,255,255,0.9); }
+    #ar-exit-btn {
+      left: 20px;
+      background: rgba(255,255,255,0.9);
+      z-index: 200;
+      pointer-events: auto;
+    }
     #ar-status {
       position: absolute;
       top: 20px; left: 0; right: 0;
@@ -114,7 +114,10 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      z-index: 101;
+      z-index: 200;
+      /* Ensure touch events reach the slider on mobile */
+      touch-action: auto;
+      pointer-events: auto;
     }
     #ar-scale-bar label {
       color: white;
@@ -132,4 +135,31 @@
       font-size: 14px;
       font-weight: bold;
       min-width: 50px;
+    }
+    #crosshair {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .crosshair-h {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -0.5px);
+      width: 40px;
+      height: 1px;
+      background: rgba(0, 0, 0, 0.8);
+    }
+    .crosshair-v {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-0.5px, -50%);
+      width: 1px;
+      height: 40px;
+      background: rgba(0, 0, 0, 0.8);
     }
