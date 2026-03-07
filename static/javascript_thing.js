@@ -263,7 +263,8 @@ let lastPlacedSurfaceType = "wall";
 let lastPlacedQuaternion = [0, 0, 0, 1];
 let lastPlacedX = undefined;
 let lastPlacedZ = undefined;
-const APP_VERSION = "1.6";   // Version number - update when making changes
+const APP_VERSION = "2.0";   // Major version bump after conflict resolution
+
 // Scale slider
 const arScaleSlider = document.getElementById("ar-scale-slider");
 const arScaleLabel = document.getElementById("ar-scale-label");
@@ -335,7 +336,6 @@ function initThreeScene() {
 }
 
 // Create a plane with the drawing texture, oriented to lie FLAT on the detected surface
-// Place drawing at WebXR hit point
 function placeDrawingAtHit(pose) {
   const drawingTexture = new THREE.CanvasTexture(canvas);
   drawingTexture.needsUpdate = true;
@@ -345,7 +345,6 @@ function placeDrawingAtHit(pose) {
   const planeHeight = planeWidth / aspect;
 
   const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
-
   const material = new THREE.MeshBasicMaterial({
     map: drawingTexture,
     transparent: true,
@@ -375,97 +374,55 @@ function placeDrawingAtHit(pose) {
   let surfaceType = "floor";
 
   if (mode === "auto") {
-    // Classify surface naturally based on normal direction
     isWall = Math.abs(surfaceNormal.y) < 0.7;
     isCeiling = !isWall && surfaceNormal.y < -0.7;
     surfaceType = isWall ? "wall" : (isCeiling ? "ceiling" : "floor");
   } else if (mode === "wall") {
-    // Force a wall (vertical) orientation
     isWall = true;
     surfaceType = "wall";
-    
-    // Construct a normal pointing horizontally towards the camera
     const camPos = new THREE.Vector3();
     camera.getWorldPosition(camPos);
-    
     surfaceNormal.copy(camPos).sub(position);
-    surfaceNormal.y = 0; // Flatten the normal to be strictly horizontal
-    if (surfaceNormal.lengthSq() > 0.001) {
-      surfaceNormal.normalize();
-    } else {
-      surfaceNormal.set(0, 0, 1); // fallback if camera directly above
-    }
+    surfaceNormal.y = 0;
+    if (surfaceNormal.lengthSq() > 0.001) surfaceNormal.normalize();
+    else surfaceNormal.set(0, 0, 1);
   } else if (mode === "floor") {
-    // Force a floor (horizontal) orientation
     isWall = false;
     surfaceType = "floor";
-    surfaceNormal.set(0, 1, 0); // pointing straight up
+    surfaceNormal.set(0, 1, 0);
   }
 
-  // === ALIGN MESH FLAT ON THE SURFACE ===
-  // A THREE.PlaneGeometry is created facing the +Z axis (0, 0, 1).
-  // To make it lie flat on the surface, we must rotate the mesh so its +Z axis aligns with the surface normal.
+  // ALIGN MESH FLAT ON THE SURFACE
   const defaultNormal = new THREE.Vector3(0, 0, 1);
-
-  // Calculate the basic rotation to align the plane with the surface normal
   const alignQuaternion = new THREE.Quaternion().setFromUnitVectors(defaultNormal, surfaceNormal);
   mesh.quaternion.copy(alignQuaternion);
 
-  // Now the plane is flat against the surface, but it might be rotated around that normal (like a steering wheel).
-  // We want to orient the "up" direction of the drawing (the local +Y axis) logically.
-
   if (isWall) {
-    // For a wall, we want the drawing's top (+Y) to point UP towards the sky (global +Y)
     const globalUp = new THREE.Vector3(0, 1, 0);
-
-    // Project global UP onto the plane (remove the component along the surface normal)
     const projectedUp = globalUp.clone().sub(surfaceNormal.clone().multiplyScalar(globalUp.dot(surfaceNormal))).normalize();
-
-    // What is the mesh's current UP direction after the basic alignment?
     const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion).normalize();
-
-    // Calculate the twist needed to align currentUp with projectedUp, around the surface normal
     const twistQuaternion = new THREE.Quaternion().setFromUnitVectors(currentUp, projectedUp);
-
-    // Apply the twist
     mesh.quaternion.premultiply(twistQuaternion);
-
   } else {
-    // For floors and ceilings, we want the top of the drawing to point away from the camera
     const camPos = new THREE.Vector3();
     camera.getWorldPosition(camPos);
-
-    // Vector from drawing to camera (projected onto the floor/ceiling plane)
     const toCam = camPos.clone().sub(position);
     const projectedToCam = toCam.sub(surfaceNormal.clone().multiplyScalar(toCam.dot(surfaceNormal))).normalize();
-
-    // The drawing's UP should point AWAY from the camera so it looks right-side up to the user
     const desiredUp = projectedToCam.clone().negate();
-    if (isCeiling) desiredUp.negate(); // Flip for ceiling so it isn't mirrored
-
-    // Apply the twist
+    if (isCeiling) desiredUp.negate();
     const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion).normalize();
     const twistQuaternion = new THREE.Quaternion().setFromUnitVectors(currentUp, desiredUp);
     mesh.quaternion.premultiply(twistQuaternion);
   }
 
-  // Position mesh ON the surface with tiny offset to prevent z-fighting
   mesh.position.copy(position);
   mesh.position.add(surfaceNormal.clone().multiplyScalar(0.002));
 
-  // LOCK THE MESH: Disable auto-updates so it stays fixed in world space
   mesh.updateMatrix();
   mesh.updateMatrixWorld();
   mesh.matrixAutoUpdate = false;
   mesh.matrixWorldAutoUpdate = false;
 
-  // Store data for anchor updates
-  mesh.userData.surfaceType = surfaceType;
-  mesh.userData.surfaceNormal = surfaceNormal.clone();
-  mesh.userData.lockedPosition = mesh.position.clone();
-  mesh.userData.lockedQuaternion = mesh.quaternion.clone();
-  mesh.userData.lockedMatrix = mesh.matrix.clone();
-  
   lastPlacedHeight = position.y;
   lastPlacedSurfaceType = surfaceType;
   lastPlacedQuaternion = [mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w];
@@ -473,38 +430,32 @@ function placeDrawingAtHit(pose) {
   lastPlacedZ = mesh.position.z;
 
   scene.add(mesh);
-  arStatus.textContent = "🔒 LOCKED on " + surfaceType.toUpperCase() + " at " + arScaleCm + "cm — graffiti is now anchored in place!";
+  arStatus.textContent = "🔒 LOCKED on " + surfaceType.toUpperCase() + " at " + arScaleCm + "cm";
   return mesh;
 }
 
-// ===================== HTTPS CHECK =====================
 function isSecureContext() {
   return location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
 }
 
-// ===================== AR MODE (WebXR) =====================
+// Start WebXR AR session
 document.getElementById("ar-btn").addEventListener("click", async () => {
-  // HTTPS check — camera won't work without it
   if (!isSecureContext()) {
-    alert("AR requires HTTPS. Camera and sensors are blocked on insecure connections.\n\nUse https:// or localhost.");
+    alert("AR requires HTTPS.");
     return;
   }
-
-  // Check WebXR support
   if (!navigator.xr) {
-    alert("WebXR is not supported on this device/browser.");
+    alert("WebXR not supported.");
     return;
   }
-
   const supported = await navigator.xr.isSessionSupported("immersive-ar");
   if (!supported) {
-    alert("Immersive AR is not supported on this device/browser.");
+    alert("Immersive AR not supported.");
     return;
   }
 
   try {
     initThreeScene();
-
     const arCanvas = document.createElement("canvas");
     gl = arCanvas.getContext("webgl", { xrCompatible: true });
     renderer = new THREE.WebGLRenderer({ canvas: arCanvas, context: gl, alpha: true });
@@ -512,12 +463,10 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
 
-    // Record compass and GPS at AR start for true global anchor calculations
     arStartBearing = userBearing;
     arStartLat = userLat;
     arStartLng = userLng;
 
-    // Request AR session with hit-test + spatial anchors
     xrSession = await navigator.xr.requestSession("immersive-ar", {
       requiredFeatures: ["hit-test"],
       optionalFeatures: ["dom-overlay", "anchors"],
@@ -535,11 +484,8 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     const viewerSpace = await xrSession.requestReferenceSpace("viewer");
     xrHitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
 
-    // Tap to place graffiti (no anchors - just static placement)
     xrSession.addEventListener("select", () => {
-      if (lastHitPose) {
-        placeDrawingAtHit(lastHitPose);
-      }
+      if (lastHitPose) placeDrawingAtHit(lastHitPose);
     });
 
     xrSession.addEventListener("end", () => {
@@ -551,35 +497,18 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
 
     renderer.setAnimationLoop((timestamp, frame) => {
       if (!frame) return;
-
       const hitResults = frame.getHitTestResults(xrHitTestSource);
       if (hitResults.length > 0) {
         const hit = hitResults[0];
-        lastHitResult = hit;
         lastHitPose = hit.getPose(xrRefSpace);
         reticleModel.visible = true;
-        reticleModel.matrix.fromArray(lastHitPose.transform.matrix);
 
-        // Detect surface type from hit normal
-        const hitQ = new THREE.Quaternion(
-          lastHitPose.transform.orientation.x,
-          lastHitPose.transform.orientation.y,
-          lastHitPose.transform.orientation.z,
-          lastHitPose.transform.orientation.w
-        );
+        const hitQ = new THREE.Quaternion(lastHitPose.transform.orientation.x, lastHitPose.transform.orientation.y, lastHitPose.transform.orientation.z, lastHitPose.transform.orientation.w);
         const rawHitNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(hitQ);
-        
-        const modeSelector = document.getElementById("ar-surface-mode");
-        const mode = modeSelector ? modeSelector.value : "auto";
-        
+        const mode = document.getElementById("ar-surface-mode")?.value || "auto";
         let hitNormal = rawHitNormal.clone();
         let hitSurface = "floor";
-
-        const hitPos = new THREE.Vector3(
-          lastHitPose.transform.position.x,
-          lastHitPose.transform.position.y,
-          lastHitPose.transform.position.z
-        );
+        const hitPos = new THREE.Vector3(lastHitPose.transform.position.x, lastHitPose.transform.position.y, lastHitPose.transform.position.z);
 
         if (mode === "auto") {
           hitSurface = Math.abs(hitNormal.y) < 0.5 ? "wall" : (hitNormal.y < -0.5 ? "ceiling" : "floor");
@@ -592,64 +521,51 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
           hitNormal.y = 0;
           if (hitNormal.lengthSq() > 0.001) hitNormal.normalize();
           else hitNormal.set(0, 0, 1);
-          
           const alignQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), hitNormal);
           reticleModel.matrix.makeRotationFromQuaternion(alignQ);
           reticleModel.matrix.setPosition(hitPos);
         } else if (mode === "floor") {
           hitSurface = "floor";
           hitNormal.set(0, 1, 0);
-          
           const alignQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), hitNormal);
           reticleModel.matrix.makeRotationFromQuaternion(alignQ);
           reticleModel.matrix.setPosition(hitPos);
         }
 
-        // Debug colors: red=wall, green=floor, cyan=ceiling
         const debugColors = { wall: 0xff3333, floor: 0x33ff33, ceiling: 0x33ccff };
         const col = debugColors[hitSurface] || 0xffffff;
         reticleModel.material.color.setHex(col);
 
-        // Debug: position arrow at hit point, pointing along surface normal
         if (debugNormalArrow) {
           debugNormalArrow.position.copy(hitPos);
           debugNormalArrow.setDirection(hitNormal);
           debugNormalArrow.setColor(new THREE.Color(col));
           debugNormalArrow.visible = true;
         }
-
-        // Debug: translucent surface patch aligned to the hit
         if (debugPlane) {
           debugPlane.matrix.copy(reticleModel.matrix);
           debugPlane.material.color.setHex(col);
           debugPlane.visible = true;
         }
-
-        arStatus.textContent = "[" + hitSurface.toUpperCase() + (mode !== "auto" ? " OVERRIDE" : "") + "] normal Y=" + hitNormal.y.toFixed(2)
-          + " — tap to place!";
+        arStatus.textContent = "[" + hitSurface.toUpperCase() + (mode !== "auto" ? " OVERRIDE" : "") + "] - tap to place!";
       } else {
         reticleModel.visible = false;
         if (debugNormalArrow) debugNormalArrow.visible = false;
         if (debugPlane) debugPlane.visible = false;
-        lastHitResult = null;
         lastHitPose = null;
-        arStatus.textContent = "Scanning for surfaces... point at a wall or floor";
+        arStatus.textContent = "Scanning...";
       }
-
       renderer.render(scene, camera);
     });
 
   } catch (err) {
     console.error(err);
-    alert("Failed to start AR session: " + err.message);
+    alert("AR failed: " + err.message);
   }
 });
 
-// Exit AR
 document.getElementById("ar-exit-btn").addEventListener("click", () => {
-  if (xrSession) {
-    xrSession.end();
-  }
+  if (xrSession) xrSession.end();
 });
 
 // ===================== GPS + GLOBAL GRAFFITI =====================
@@ -657,287 +573,129 @@ let userLat = null, userLng = null, userBearing = 0;
 let gpsWatchId = null;
 const gpsStatus = document.getElementById("ar-gps-status");
 
-// Start GPS tracking — called on user gesture for iOS compatibility
 function startGPSTracking() {
-  if (gpsWatchId !== null) return; // already tracking
-  if (!("geolocation" in navigator)) {
-    console.warn("Geolocation not available");
-    return;
-  }
-  gpsWatchId = navigator.geolocation.watchPosition(
-    (pos) => {
-      userLat = pos.coords.latitude;
-      userLng = pos.coords.longitude;
-      if (pos.coords.heading != null && !isNaN(pos.coords.heading)) {
-        userBearing = pos.coords.heading;
-      }
-      if (gpsStatus) {
-        gpsStatus.textContent = `📍 GPS: ${userLat.toFixed(5)}, ${userLng.toFixed(5)}`;
-      }
-    },
-    (err) => {
-      console.warn("GPS error:", err.code, err.message);
-      if (gpsStatus) {
-        const msgs = {
-          1: "⚠️ GPS: Permission denied. Allow location access in browser settings.",
-          2: "⚠️ GPS: Position unavailable. Try moving outdoors.",
-          3: "⚠️ GPS: Timed out. Retrying..."
-        };
-        gpsStatus.textContent = msgs[err.code] || ("⚠️ GPS: " + err.message);
-      }
-    },
-    { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
-  );
+  if (gpsWatchId !== null || !("geolocation" in navigator)) return;
+  gpsWatchId = navigator.geolocation.watchPosition((pos) => {
+    userLat = pos.coords.latitude; userLng = pos.coords.longitude;
+    if (pos.coords.heading != null && !isNaN(pos.coords.heading)) userBearing = pos.coords.heading;
+    if (gpsStatus) gpsStatus.textContent = `📍 GPS: ${userLat.toFixed(5)}, ${userLng.toFixed(5)}`;
+  }, (err) => {
+    console.warn("GPS error:", err.message);
+  }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 });
 }
-
-// Try starting GPS on load (works on Android/desktop, may silently fail on iOS)
 startGPSTracking();
 
-// Also use compass for bearing when GPS heading unavailable
 window.addEventListener("deviceorientation", (e) => {
-  if (e.webkitCompassHeading != null) {
-    userBearing = e.webkitCompassHeading; // iOS
-  } else if (e.alpha != null) {
-    userBearing = 360 - e.alpha; // Android
-  }
+  if (e.webkitCompassHeading != null) userBearing = e.webkitCompassHeading;
+  else if (e.alpha != null) userBearing = 360 - e.alpha;
 });
 
-// Share graffiti globally (save to MongoDB)
 document.getElementById("ar-share-btn").addEventListener("click", async () => {
   if (userLat === null || userLng === null) {
-    if (gpsStatus) gpsStatus.textContent = "📡 Acquiring GPS position...";
-    // Try a one-shot position request as fallback
-    try {
-      const pos = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true, timeout: 15000
-        });
-      });
-      userLat = pos.coords.latitude;
-      userLng = pos.coords.longitude;
-      startGPSTracking();
-    } catch (err) {
-      const msgs = {
-        1: "❌ Location permission denied. Allow location access in your browser/device settings and reload.",
-        2: "❌ Position unavailable. Make sure GPS/Location Services are turned on.",
-        3: "❌ GPS timed out. Try again outdoors or check device location settings."
-      };
-      if (gpsStatus) gpsStatus.textContent = msgs[err.code] || ("❌ GPS error: " + err.message);
-      return;
-    }
+    alert("Determining location...");
+    return;
   }
-
   const imageData = canvas.toDataURL("image/png");
   const description = document.getElementById("ar-description").value.trim();
   
   if (lastPlacedX === undefined || arStartLat === null || arStartLng === null) {
-    if (gpsStatus) gpsStatus.textContent = "❌ Please place graffiti on a surface first!";
-    alert("Please place your graffiti onto a wall or floor in AR before sharing.");
+    alert("Place graffiti on a surface first!");
     return;
   }
 
-  // Convert local WebXR (X, Z) back to Global GPS (Lat, Lng)
   const bRad = arStartBearing * Math.PI / 180;
   const eastMeters = lastPlacedX * Math.cos(bRad) - lastPlacedZ * Math.sin(bRad);
   const northMeters = -lastPlacedX * Math.sin(bRad) - lastPlacedZ * Math.cos(bRad);
-
   const metersPerDegLat = 111320;
   const metersPerDegLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
 
   const graffitiLat = arStartLat + (northMeters / metersPerDegLat);
   const graffitiLng = arStartLng + (eastMeters / metersPerDegLng);
 
-  if (gpsStatus) gpsStatus.textContent = "Uploading true 3D coordinates...";
-
   try {
     const resp = await fetch("/api/graffiti", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        lat: graffitiLat,
-        lng: graffitiLng,
-        image: imageData,
-        scale: arScaleCm,
-        bearing: arStartBearing,
-        description: description,
-        height: lastPlacedHeight,
-        surfaceType: lastPlacedSurfaceType,
-        quaternion: lastPlacedQuaternion
+        lat: graffitiLat, lng: graffitiLng, image: imageData, scale: arScaleCm,
+        bearing: arStartBearing, description: description, height: lastPlacedHeight,
+        surfaceType: lastPlacedSurfaceType, quaternion: lastPlacedQuaternion
       })
     });
-    const result = await resp.json();
     if (resp.ok) {
-      if (gpsStatus) gpsStatus.textContent = "✅ Shared globally! Anyone nearby can see it.";
+      if (gpsStatus) gpsStatus.textContent = "✅ Shared globally!";
       document.getElementById("ar-description").value = "";
-    } else {
-      if (gpsStatus) gpsStatus.textContent = "❌ " + (result.error || "Upload failed");
     }
-  } catch (err) {
-    if (gpsStatus) gpsStatus.textContent = "❌ Network error: " + err.message;
-  }
+  } catch (err) { console.error(err); }
 });
 
-// Load nearby graffiti from MongoDB and render in 3D scene
 document.getElementById("ar-load-btn").addEventListener("click", () => loadNearbyGraffiti());
 
 async function loadNearbyGraffiti() {
-  if (userLat === null || userLng === null) {
-    if (gpsStatus) gpsStatus.textContent = "📡 Acquiring GPS position...";
-    try {
-      const pos = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true, timeout: 15000
-        });
-      });
-      userLat = pos.coords.latitude;
-      userLng = pos.coords.longitude;
-      startGPSTracking();
-    } catch (err) {
-      const msgs = {
-        1: "❌ Location permission denied. Allow in browser settings.",
-        2: "❌ Position unavailable. Check GPS/Location Services.",
-        3: "❌ GPS timed out. Try outdoors."
-      };
-      if (gpsStatus) gpsStatus.textContent = msgs[err.code] || ("❌ GPS error: " + err.message);
-      return;
-    }
-  }
-
-  if (gpsStatus) gpsStatus.textContent = "📡 Loading nearby graffiti...";
-
+  if (userLat === null || userLng === null) return;
   try {
     const resp = await fetch(`/api/graffiti/nearby?lat=${userLat}&lng=${userLng}&radius=200`);
-    if (!resp.ok) {
-      const err = await resp.json();
-      if (gpsStatus) gpsStatus.textContent = "❌ " + (err.error || "Load failed");
-      return;
-    }
-
+    if (!resp.ok) return;
     const items = await resp.json();
-    if (items.length === 0) {
-      if (gpsStatus) gpsStatus.textContent = "No graffiti nearby. Be the first!";
-      return;
-    }
+    if (items.length === 0) return;
 
-    // Determine which scene to render into
-    const targetScene = scene;
-    const targetCamera = camera;
-
-    if (!targetScene) {
-      if (gpsStatus) gpsStatus.textContent = "⚠️ AR scene not ready";
-      return;
-    }
-
+    if (!scene) return;
     let loaded = 0;
     for (const item of items) {
-      // Skip if already loaded (check by ID tag)
-      if (targetScene.getObjectByName("global_" + item.id)) continue;
-
+      if (scene.getObjectByName("global_" + item.id)) continue;
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => {
         const tex = new THREE.CanvasTexture(imageToCanvas(img));
         tex.needsUpdate = true;
-
         const aspect = img.width / img.height;
         const planeW = (item.scale || 50) / 100;
         const planeH = planeW / aspect;
-
         const geo = new THREE.PlaneGeometry(planeW, planeH);
-        const mat = new THREE.MeshBasicMaterial({
-          map: tex, 
-          transparent: true, 
-          side: THREE.DoubleSide, 
-          depthWrite: false, // Prevents Z-fighting
-          depthTest: true    // Still occludes behind real walls
-        });
+        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false, depthTest: true });
         const mesh = new THREE.Mesh(geo, mat);
-        
-        // Ensure standard rendering updates apply initially before locked
-        mesh.matrixAutoUpdate = true;
         mesh.name = "global_" + item.id;
-
-        // Load graffiti relative to your precise starting anchor
+        
         const dLat = item.lat - arStartLat;
         const dLng = item.lng - arStartLng;
-        const metersPerDegLat = 111320;
-        const metersPerDegLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
-        const northMeters = dLat * metersPerDegLat;
-        const eastMeters = dLng * metersPerDegLng;
+        const mLat = 111320;
+        const mLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
+        const nM = dLat * mLat;
+        const eM = dLng * mLng;
+        const bRad = arStartBearing * Math.PI / 180;
+        const sX = eM * Math.cos(bRad) - nM * Math.sin(bRad);
+        const sZ = -eM * Math.sin(bRad) - nM * Math.cos(bRad);
+        mesh.position.set(sX, item.height || 1.5, sZ);
 
-        // Rotate GPS offset into scene coordinates
-        const sceneBearing = arStartBearing;
-        const bRad = sceneBearing * Math.PI / 180;
-        const sceneX = eastMeters * Math.cos(bRad) - northMeters * Math.sin(bRad);
-        const sceneZ = -eastMeters * Math.sin(bRad) - northMeters * Math.cos(bRad);
-
-        // Height: stored value or default 1.5m
-        let h = item.height != null ? item.height : 1.5;
-
-        mesh.position.set(sceneX, h, sceneZ);
-
-        if (item.quaternion && item.quaternion.length === 4) {
-          // Restore exact 3D orientation
+        if (item.quaternion) {
           mesh.quaternion.set(item.quaternion[0], item.quaternion[1], item.quaternion[2], item.quaternion[3]);
-          
-          // Adjust for user's compass bearing vs the placed bearing
-          const itemBearingRad = ((item.bearing || 0) - arStartBearing) * Math.PI / 180;
-          const globalY = new THREE.Vector3(0, 1, 0);
-          
-          // Fix WebXR quaternion premultiplication chaining
-          const rotQ = new THREE.Quaternion().setFromAxisAngle(globalY, itemBearingRad);
-          mesh.quaternion.premultiply(rotQ);
+          const itemBRad = ((item.bearing || 0) - arStartBearing) * Math.PI / 180;
+          mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), itemBRad));
         } else {
-          // Fallback for older graffiti without quaternions
-          const itemBearingRad = ((item.bearing || 0) - arStartBearing) * Math.PI / 180;
-          mesh.rotation.y = itemBearingRad;
-          if (item.surfaceType === "floor") {
-            mesh.rotation.x = -Math.PI / 2;
-          } else if (item.surfaceType === "ceiling") {
-            mesh.rotation.x = Math.PI / 2;
-          }
+          mesh.rotation.y = ((item.bearing || 0) - arStartBearing) * Math.PI / 180;
+          if (item.surfaceType === "floor") mesh.rotation.x = -Math.PI / 2;
         }
-
-        targetScene.add(mesh);
-        
-        // Wait exactly one render frame for WebGL to buffer the texture, then permanently lock it
+        scene.add(mesh);
         requestAnimationFrame(() => {
-          mesh.updateMatrix();
           mesh.updateMatrixWorld();
           mesh.matrixAutoUpdate = false;
-          mesh.matrixWorldAutoUpdate = false;
         });
-        
         loaded++;
-
-        if (gpsStatus) gpsStatus.textContent = `🌍 Loaded ${loaded} graffiti nearby`;
+        if (gpsStatus) gpsStatus.textContent = `🌍 Loaded ${loaded} nearby`;
       };
       img.src = item.image;
     }
-
-    // Show a clickable list of nearby graffiti
-    if (items.length > 0) {
-      showNearbyList(items);
-    }
-
-    if (loaded === 0 && gpsStatus) {
-      gpsStatus.textContent = `🌍 ${items.length} graffiti nearby (loading images...)`;
-    }
-  } catch (err) {
-    if (gpsStatus) gpsStatus.textContent = "❌ " + err.message;
-  }
+    showNearbyList(items);
+  } catch (err) { console.error(err); }
 }
 
-// Helper: convert Image to canvas (for Three.js texture)
 function imageToCanvas(img) {
   const c = document.createElement("canvas");
-  c.width = img.width;
-  c.height = img.height;
+  c.width = img.width; c.height = img.height;
   c.getContext("2d").drawImage(img, 0, 0);
   return c;
 }
 
-// Show clickable list of nearby graffiti in AR overlay
 function showNearbyList(items) {
   let list = document.getElementById("nearby-list");
   if (!list) {
@@ -946,19 +704,12 @@ function showNearbyList(items) {
     list.className = "nearby-list";
     arOverlay.appendChild(list);
   }
-  list.innerHTML = "<h4>🌍 Nearby Graffiti</h4>";
+  list.innerHTML = "<h4>🌍 Nearby</h4>";
   items.forEach(item => {
     const card = document.createElement("a");
     card.href = "/graffiti/" + item.id;
     card.className = "nearby-card";
-    card.innerHTML = `<img src="${item.image}" alt="graffiti">`
-      + `<div class="nearby-card-info">`
-      + `<span class="nearby-card-author">${item.author || 'Anon'}</span>`
-      + `<span class="nearby-card-desc">${(item.description || '').slice(0, 60)}</span>`
-      + `<span class="nearby-card-stats">❤️ ${item.likes || 0} · 💬 ${item.comments || 0}</span>`
-      + `</div>`;
+    card.innerHTML = `<img src="${item.image}">`;
     list.appendChild(card);
   });
 }
-
-
