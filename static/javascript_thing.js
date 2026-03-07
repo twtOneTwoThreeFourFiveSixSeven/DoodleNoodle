@@ -258,7 +258,6 @@
     let arStartBearing = 0;        // compass heading when AR started
     let lastPlacedHeight = 1.5;    // last placed graffiti height (meters from floor)
     const APP_VERSION = "1.2.0";   // Version number - update when making changes
-    let arScaleCm = 50;
 
     // Scale slider
     const arScaleSlider = document.getElementById("ar-scale-slider");
@@ -515,8 +514,6 @@
       // Check WebXR support
       if (!navigator.xr) {
         startFallbackAR(false);
-      if (!navigator.xr) {
-        startFallbackAR();
         return;
       }
 
@@ -836,13 +833,14 @@
 
       // ---- Tap to place drawing in 3D (passive:false for iOS) ----
       const fb3d = document.getElementById("fallback-3d");
-      fb3d.addEventListener("click", (e) => {
-        placeDrawingInScene(fbScene, fbCamera, e);
-      });
+      let touchPlaced = false; // prevent double-placement from touch + click
+
       fb3d.addEventListener("touchstart", (e) => {
         if (e.target.tagName === "BUTTON") return;
         e.preventDefault(); // prevent iOS scroll/bounce
       }, { passive: false });
+
+      const raycaster = new THREE.Raycaster();
 
       function handleFallbackPlace(evt) {
         const clientX = evt.clientX || evt.pageX;
@@ -852,105 +850,36 @@
         if (target && (
           target.closest("#ar-scale-bar") ||
           target.closest("#ar-exit-btn") ||
-          target.closest("#ar-status")
+          target.closest("#ar-status") ||
+          target.closest("#ar-gps-status") ||
+          target.closest("#ar-share-btn") ||
+          target.closest("#ar-load-btn") ||
+          target.closest("#ar-description") ||
+          target.closest(".nearby-list")
         )) {
           return;
         }
 
-        // Raycast from tap point to find a virtual wall
-        const mouse = new THREE.Vector2(
-          (clientX / window.innerWidth) * 2 - 1,
-          -(clientY / window.innerHeight) * 2 + 1
-        );
-
-        raycaster.setFromCamera(mouse, fbCamera);
-        const walls = fbScene.children.filter(c => c.name === "wall");
-        const hits = raycaster.intersectObjects(walls);
-
-        if (hits.length > 0) {
-          const hit = hits[0];
-          placeDrawingOnWall(fbScene, hit.point, hit.face.normal.clone().transformDirection(hit.object.matrixWorld), hit.object);
-        } else {
-          placeDrawingInFront(fbScene, fbCamera);
-        }
+        placeDrawingInScene(fbScene, fbCamera, evt);
       }
 
-      fb3d.addEventListener("click", handleFallbackPlace);
+      fb3d.addEventListener("click", (e) => {
+        // Skip if touchend already handled this tap
+        if (touchPlaced) {
+          touchPlaced = false;
+          return;
+        }
+        handleFallbackPlace(e);
+      });
       fb3d.addEventListener("touchend", (e) => {
         if (e.target.tagName === "BUTTON") return;
         e.preventDefault();
         const touch = e.changedTouches[0];
-        placeDrawingInScene(fbScene, fbCamera, touch);
-      }, { passive: false });
+        touchPlaced = true;
         handleFallbackPlace(touch);
-      });
+      }, { passive: false });
 
-      function placeDrawingOnWall(sc, point, normal, wall) {
-        const drawingTexture = new THREE.CanvasTexture(canvas);
-        drawingTexture.needsUpdate = true;
-
-        const currentScale = parseInt(arScaleSlider.value);
-        const aspect = canvas.width / canvas.height;
-        const planeWidth = currentScale / 100;
-        const planeHeight = planeWidth / aspect;
-
-        const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
-        const material = new THREE.MeshBasicMaterial({
-          map: drawingTexture,
-          transparent: true,
-          side: THREE.DoubleSide,
-        });
-        const mesh = new THREE.Mesh(geometry, material);
-
-        // Estimate the surface the camera is aimed at
-        const est = estimateSurfacePlacement(cam);
-
-        // Position on estimated surface with small offset to avoid z-fighting
-        mesh.position.copy(est.position);
-        mesh.position.add(est.surfaceNormal.clone().multiplyScalar(0.005));
-        lastPlacedHeight = est.position.y + CAMERA_HEIGHT; // absolute height from floor
-
-        if (est.surfaceType === "wall") {
-          // Wall: face the drawing outward toward the camera
-          mesh.lookAt(cam.position);
-          mesh.rotateY(Math.PI);
-        } else {
-          // Floor / ceiling: lay the drawing flat on the surface
-          mesh.rotation.x = est.surfaceType === "floor" ? -Math.PI / 2 : Math.PI / 2;
-          // Align the drawing's "up" with the camera's horizontal forward
-          const camFwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-          camFwd.y = 0;
-          if (camFwd.length() > 0.001) {
-            camFwd.normalize();
-            mesh.rotation.z = -Math.atan2(camFwd.x, camFwd.z);
-          }
-        }
-
-        sc.add(mesh);
-        arStatus.textContent = "✅ Placed on " + est.surfaceType + "! Move phone to see it anchored.";
-
-        // Auto-anchor: save GPS coords with this placement
-        if (userLat !== null && userLng !== null) {
-          mesh.userData.lat = userLat;
-          mesh.userData.lng = userLng;
-          mesh.userData.bearing = userBearing;
-          mesh.userData.anchored = true;
-        }
-        // Offset slightly off the wall to prevent z-fighting
-        const offsetPoint = point.clone().add(normal.clone().multiplyScalar(0.005));
-        mesh.position.copy(offsetPoint);
-
-        // Align the plane to lie flat on the wall surface
-        // PlaneGeometry's default normal is (0,0,1)
-        // We need to rotate it so (0,0,1) aligns with the wall's outward normal
-        const defaultNormal = new THREE.Vector3(0, 0, 1);
-        const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultNormal, normal.normalize());
-        mesh.quaternion.copy(quaternion);
-
-        sc.add(mesh);
-      }
-
-      function placeDrawingInFront(sc, cam) {
+      function placeDrawingInScene(sc, cam, evt) {
         const drawingTexture = new THREE.CanvasTexture(canvas);
         drawingTexture.needsUpdate = true;
 
@@ -968,20 +897,28 @@
         });
         const mesh = new THREE.Mesh(geometry, material);
 
-        // Place 2m in front of camera
-        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-        const pos = cam.position.clone().add(dir.multiplyScalar(2));
-        mesh.position.copy(pos);
+        // Estimate the surface the camera is aimed at
+        const est = estimateSurfacePlacement(cam);
 
-        // The wall's outward normal points back toward the camera
-        const wallNormal = dir.clone().negate().normalize();
+        // Position on estimated surface with small offset to avoid z-fighting
+        mesh.position.copy(est.position);
+        mesh.position.add(est.surfaceNormal.clone().multiplyScalar(0.005));
+        lastPlacedHeight = est.position.y + CAMERA_HEIGHT; // absolute height from floor
 
-        // Align the plane so it faces the camera (flat against the virtual wall)
+        // Align the plane to lie flat on the surface
         const defaultNormal = new THREE.Vector3(0, 0, 1);
-        const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultNormal, wallNormal);
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultNormal, est.surfaceNormal.normalize());
         mesh.quaternion.copy(quaternion);
 
         sc.add(mesh);
+
+        // Auto-anchor: save GPS coords with this placement
+        if (userLat !== null && userLng !== null) {
+          mesh.userData.lat = userLat;
+          mesh.userData.lng = userLng;
+          mesh.userData.bearing = userBearing;
+          mesh.userData.anchored = true;
+        }
       }
 
       // ---- Render loop ----
