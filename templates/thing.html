@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Wall Graffiti AR</title>
-  <link rel="stylesheet" href="css.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css.css') }}">
 
   <!-- Three.js for 3D rendering -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
@@ -17,6 +17,10 @@
     <button id="eraser-btn">🧹 Eraser</button>
     <label>Size: <input type="range" id="size-slider" min="1" max="50" value="4"></label>
     <span id="size-label" style="color:white;">4</span>
+    <input type="color" id="color-picker" value="#000000" title="Pick a color">
+    <input type="text" id="hex-input" value="#000000" maxlength="7" placeholder="#000000">
+    <button id="img-btn">🖼️ Insert Image</button>
+    <input type="file" id="img-upload" accept="image/png,image/jpeg" style="display:none;">
     <button id="clear-btn">🗑️ Clear</button>
     <button id="save-btn">💾 Save</button>
     <button id="ar-btn">📸 Place on Wall</button>
@@ -33,6 +37,6 @@
     <button id="ar-exit-btn">← Back to Draw</button>
   </div>
 
-  <script src="javascript_thing.js"></script>
+  <script src="{{ url_for('static', filename='javascript_thing.js') }}"></script>
 </body>
 </html>
