@@ -257,7 +257,7 @@
     let arScaleCm = 50; // default 50cm
     let arStartBearing = 0;        // compass heading when AR started
     let lastPlacedHeight = 1.5;    // last placed graffiti height (meters from floor)
-    const APP_VERSION = "1.2.0";   // Version number - update when making changes
+    const APP_VERSION = "1.3";   // Version number - update when making changes
 
     // Scale slider
     const arScaleSlider = document.getElementById("ar-scale-slider");
@@ -358,57 +358,59 @@
       const scaleVec = new THREE.Vector3();
       matrix.decompose(position, quaternion, scaleVec);
 
-      // Extract surface normal from the hit pose (+Y axis in pose space = surface normal)
-      const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
-      surfaceNormal.normalize();
+      // In WebXR hit test results, the local +Y axis of the pose represents the surface normal
+      const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize();
 
       // Classify surface based on normal direction
-      // Wall: normal is mostly horizontal (|y| < 0.7)
-      // Floor: normal points up (y > 0.7)
-      // Ceiling: normal points down (y < -0.7)
       const isWall = Math.abs(surfaceNormal.y) < 0.7;
       const isCeiling = !isWall && surfaceNormal.y < -0.7;
       const surfaceType = isWall ? "wall" : (isCeiling ? "ceiling" : "floor");
 
-      // === CRITICAL: Align mesh FLAT against the surface ===
-      // The mesh should lie ON the surface, with its face parallel to the surface
+      // === ALIGN MESH FLAT ON THE SURFACE ===
+      // A THREE.PlaneGeometry is created facing the +Z axis (0, 0, 1).
+      // To make it lie flat on the surface, we must rotate the mesh so its +Z axis aligns with the surface normal.
+      const defaultNormal = new THREE.Vector3(0, 0, 1);
       
-      // Get camera position for determining "up" orientation of the graffiti
-      const camPos = new THREE.Vector3();
-      camera.getWorldPosition(camPos);
+      // Calculate the basic rotation to align the plane with the surface normal
+      const alignQuaternion = new THREE.Quaternion().setFromUnitVectors(defaultNormal, surfaceNormal);
+      mesh.quaternion.copy(alignQuaternion);
+
+      // Now the plane is flat against the surface, but it might be rotated around that normal (like a steering wheel).
+      // We want to orient the "up" direction of the drawing (the local +Y axis) logically.
       
       if (isWall) {
-        // WALL: Mesh lies flat against wall, facing outward
-        if (isCeiling) {
-          mesh.rotation.x = Math.PI;
-        } else {
-          mesh.rotation.x = 0;
-        }
-        const toCamera = camPos.clone().sub(position);
-        toCamera.y = 0;
-        if (toCamera.length() > 0.01) {
-          toCamera.normalize();
-          const angle = Math.atan2(toCamera.x, toCamera.z);
-          mesh.rotation.y = angle;
-        }
+          // For a wall, we want the drawing's top (+Y) to point UP towards the sky (global +Y)
+          const globalUp = new THREE.Vector3(0, 1, 0);
+          
+          // Project global UP onto the plane (remove the component along the surface normal)
+          const projectedUp = globalUp.clone().sub(surfaceNormal.clone().multiplyScalar(globalUp.dot(surfaceNormal))).normalize();
+          
+          // What is the mesh's current UP direction after the basic alignment?
+          const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion).normalize();
+          
+          // Calculate the twist needed to align currentUp with projectedUp, around the surface normal
+          const twistQuaternion = new THREE.Quaternion().setFromUnitVectors(currentUp, projectedUp);
+          
+          // Apply the twist
+          mesh.quaternion.premultiply(twistQuaternion);
+          
       } else {
-        // FLOOR or CEILING: Mesh lies flat (horizontal)
-        const up = new THREE.Vector3(0, 1, 0);
-        let meshUp = up.clone();
-        const camDir = camPos.clone().sub(position).normalize();
-        const onWallPlane = camDir.clone().sub(surfaceNormal.clone().multiplyScalar(camDir.dot(surfaceNormal)));
-        if (onWallPlane.length() > 0.01) {
-          onWallPlane.normalize();
-          meshUp.set(0, 1, 0);
-          meshUp.add(onWallPlane.multiplyScalar(0.1));
-          meshUp.normalize();
-        }
-        const zAxis = surfaceNormal.clone();
-        const xAxis = new THREE.Vector3().crossVectors(meshUp, zAxis).normalize();
-        const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
-        const rotMatrix = new THREE.Matrix4();
-        rotMatrix.makeBasis(xAxis, yAxis, zAxis);
-        mesh.quaternion.setFromRotationMatrix(rotMatrix);
+          // For floors and ceilings, we want the top of the drawing to point away from the camera
+          const camPos = new THREE.Vector3();
+          camera.getWorldPosition(camPos);
+          
+          // Vector from drawing to camera (projected onto the floor/ceiling plane)
+          const toCam = camPos.clone().sub(position);
+          const projectedToCam = toCam.sub(surfaceNormal.clone().multiplyScalar(toCam.dot(surfaceNormal))).normalize();
+          
+          // The drawing's UP should point AWAY from the camera so it looks right-side up to the user
+          const desiredUp = projectedToCam.clone().negate();
+           if (isCeiling) desiredUp.negate(); // Flip for ceiling so it isn't mirrored
+          
+          // Apply the twist
+          const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion).normalize();
+          const twistQuaternion = new THREE.Quaternion().setFromUnitVectors(currentUp, desiredUp);
+          mesh.quaternion.premultiply(twistQuaternion);
       }
 
       // Position mesh ON the surface with tiny offset to prevent z-fighting
@@ -909,6 +911,13 @@
         const defaultNormal = new THREE.Vector3(0, 0, 1);
         const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultNormal, est.surfaceNormal.normalize());
         mesh.quaternion.copy(quaternion);
+
+        // Twist the plane so its top (+Y) points up towards the sky
+        const globalUp = new THREE.Vector3(0, 1, 0);
+        const projectedUp = globalUp.clone().sub(est.surfaceNormal.clone().multiplyScalar(globalUp.dot(est.surfaceNormal))).normalize();
+        const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion).normalize();
+        const twistQuaternion = new THREE.Quaternion().setFromUnitVectors(currentUp, projectedUp);
+        mesh.quaternion.premultiply(twistQuaternion);
 
         sc.add(mesh);
 
