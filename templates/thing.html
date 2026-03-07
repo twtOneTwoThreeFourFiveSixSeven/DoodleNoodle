@@ -13,6 +13,14 @@
 
   <!-- Drawing mode -->
   <div class="toolbar" id="draw-toolbar">
+    <div class="user-bar">
+      {% if user and user.picture %}
+        <img src="{{ user.picture }}" alt="" class="user-avatar">
+      {% endif %}
+      <span class="user-name">{{ user.name or user.email or 'Guest' }}</span>
+      <a href="{{ url_for('logout') }}" class="toolbar-link">Logout</a>
+      <a href="{{ url_for('home') }}" class="toolbar-link">Home</a>
+    </div>
     <button id="pen-btn" class="active">✏️ Pen</button>
     <button id="eraser-btn">🧹 Eraser</button>
     <label>Size: <input type="range" id="size-slider" min="1" max="50" value="4"></label>
@@ -31,7 +39,7 @@
   <div id="ios-ar-gate" style="display:none;">
     <div class="ios-gate-box">
       <h2>📸 Start AR Mode</h2>
-      <p>This requires camera and motion sensor access.</p>
+      <p>This requires camera, motion sensor, and location access.</p>
       <button id="ios-start-ar-btn">Grant Access & Start</button>
       <button id="ios-cancel-btn">Cancel</button>
       <div id="ios-gate-status"></div>
@@ -46,6 +54,7 @@
       <label>📏 Size: <input type="range" id="ar-scale-slider" min="10" max="300" value="50"></label>
     </div>
     <div id="ar-action-bar">
+      <input type="text" id="ar-description" placeholder="Describe your graffiti..." maxlength="500">
       <button id="ar-share-btn">🌍 Share Globally</button>
       <button id="ar-load-btn">📡 Load Nearby</button>
     </div>

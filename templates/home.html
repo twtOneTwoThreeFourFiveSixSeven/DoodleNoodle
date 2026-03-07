@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GoGoGraffiti — AR Street Art</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css.css') }}">
+</head>
+<body class="home-body">
+
+  <div class="home-container">
+    <div class="home-hero">
+      <h1 class="home-title">🎨 GoGoGraffiti</h1>
+      <p class="home-tagline">Draw. Place. Share.<br>AR street art — anywhere in the world.</p>
+
+      <div class="home-features">
+        <div class="feature-card">
+          <span class="feature-icon">✏️</span>
+          <h3>Draw</h3>
+          <p>Create with pen, colors, hex codes, and image inserts</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">📸</span>
+          <h3>Place in AR</h3>
+          <p>Anchor your art on real walls, floors, and surfaces</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🌍</span>
+          <h3>Share Globally</h3>
+          <p>GPS-locked art visible to anyone nearby</p>
+        </div>
+      </div>
+
+      {% if user %}
+        <div class="home-user">
+          {% if user.picture %}
+            <img src="{{ user.picture }}" alt="avatar" class="home-avatar">
+          {% endif %}
+          <span class="home-username">{{ user.name or user.email }}</span>
+        </div>
+        <div class="home-actions">
+          <a href="{{ url_for('app_page') }}" class="btn btn-primary">🚀 Open App</a>
+          <a href="{{ url_for('logout') }}" class="btn btn-secondary">Log Out</a>
+        </div>
+      {% else %}
+        <div class="home-actions">
+          <a href="{{ url_for('login') }}" class="btn btn-primary">🔐 Log In / Sign Up</a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+</body>
+</html>

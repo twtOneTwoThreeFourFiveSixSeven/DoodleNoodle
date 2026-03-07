@@ -317,10 +317,15 @@
 
       mesh.position.copy(position);
       mesh.quaternion.copy(quaternion);
+
+      // Small offset along surface normal to prevent z-fighting
+      const surfaceUp = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
+      mesh.position.add(surfaceUp.multiplyScalar(0.002));
+
       mesh.updateMatrix();
 
       scene.add(mesh);
-      arStatus.textContent = "✅ Placed at " + arScaleCm + "cm wide! Tap again to place more.";
+      arStatus.textContent = "✅ Placed on surface at " + arScaleCm + "cm wide! Tap again to place more.";
     }
 
     // ===================== HTTPS CHECK =====================
@@ -359,7 +364,21 @@
         }
       }
 
-      // 2. Permissions granted — hide gate, launch AR
+      // 2. Request GPS location (iOS requires user gesture for first prompt)
+      iosGateStatus.textContent = "Requesting location...";
+      try {
+        await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true, timeout: 10000
+          });
+        });
+        startGPSTracking();
+      } catch (err) {
+        console.warn("GPS permission:", err.message);
+        // Continue without GPS — AR still works, just no global sharing
+      }
+
+      // 3. Permissions granted — hide gate, launch AR
       iosGate.style.display = "none";
       startFallbackAR(true); // true = permissions already granted
     });
@@ -382,6 +401,9 @@
         iosGateStatus.textContent = "";
         return;
       }
+
+      // Ensure GPS is started (user gesture context)
+      startGPSTracking();
 
       // Check WebXR support
       if (!navigator.xr) {
@@ -477,6 +499,61 @@
     let fbScene = null, fbCamera = null, fbRenderer = null;
     let fbOrientAlpha = 0, fbOrientBeta = 0, fbOrientGamma = 0;
     let fbActive = false;
+    let fbReticle = null;
+
+    // Compass-corrected yaw to fight gyro drift
+    let compassHeading = null;        // raw compass heading (degrees)
+    let alphaOffset = null;           // correction: compassHeading - rawAlpha at calibration
+    let lastCalibrateTime = 0;
+    const CALIBRATE_INTERVAL = 3000;  // re-calibrate every 3s
+    const SMOOTH_FACTOR = 0.15;       // low-pass filter strength (lower = smoother)
+    let smoothAlpha = null, smoothBeta = null, smoothGamma = null;
+
+    function smoothAngle(current, target, factor) {
+      // Smooth angles handling 0/360 wraparound
+      let diff = target - current;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      return current + diff * factor;
+    }
+
+    // Estimate which surface (floor / wall / ceiling) the camera is aimed at
+    // and return the 3D position + surface normal for placement
+    const CAMERA_HEIGHT = 1.5;   // assumed phone height in meters
+    const CEILING_CLEARANCE = 1.0; // assumed ceiling above phone
+    const WALL_DISTANCE = 2.0;
+    const MAX_SURFACE_DIST = 6.0;
+
+    function estimateSurfacePlacement(cam) {
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+      const pitch = Math.asin(THREE.MathUtils.clamp(forward.y, -1, 1));
+
+      let position, surfaceNormal, surfaceType;
+
+      if (pitch < -0.3) {
+        // Looking down → floor at y = -CAMERA_HEIGHT
+        const t = Math.min(CAMERA_HEIGHT / Math.abs(forward.y), MAX_SURFACE_DIST);
+        position = forward.clone().multiplyScalar(t);
+        surfaceNormal = new THREE.Vector3(0, 1, 0);
+        surfaceType = "floor";
+      } else if (pitch > 0.3) {
+        // Looking up → ceiling at y = +CEILING_CLEARANCE
+        const t = Math.min(CEILING_CLEARANCE / forward.y, MAX_SURFACE_DIST);
+        position = forward.clone().multiplyScalar(t);
+        surfaceNormal = new THREE.Vector3(0, -1, 0);
+        surfaceType = "ceiling";
+      } else {
+        // Roughly horizontal → wall
+        position = forward.clone().multiplyScalar(WALL_DISTANCE);
+        surfaceNormal = forward.clone().negate();
+        surfaceNormal.y = 0;
+        if (surfaceNormal.length() > 0.001) surfaceNormal.normalize();
+        else surfaceNormal.set(0, 0, 1);
+        surfaceType = "wall";
+      }
+
+      return { position, surfaceNormal, surfaceType };
+    }
 
     async function startFallbackAR(permissionsGranted) {
       arOverlay.style.display = "block";
@@ -540,13 +617,57 @@
         fbRenderer.setPixelRatio(window.devicePixelRatio);
         fbRenderer.setSize(window.innerWidth, window.innerHeight);
         fbRenderer.setClearColor(0x000000, 0);
+
+        // Surface reticle — ring that shows where graffiti will be placed
+        const reticleGeo = new THREE.RingGeometry(0.08, 0.10, 32);
+        const reticleMat = new THREE.MeshBasicMaterial({ color: 0x00ff88, side: THREE.DoubleSide, depthTest: false, transparent: true, opacity: 0.7 });
+        fbReticle = new THREE.Mesh(reticleGeo, reticleMat);
+        fbReticle.visible = false;
+        fbScene.add(fbReticle);
       }
 
       // ---- Device orientation → camera rotation ----
       function onOrientation(e) {
-        if (e.alpha != null) fbOrientAlpha = e.alpha;
-        if (e.beta != null) fbOrientBeta = e.beta;
-        if (e.gamma != null) fbOrientGamma = e.gamma;
+        if (e.alpha != null) {
+          let correctedAlpha = e.alpha;
+
+          // Use compass to correct gyro drift on yaw
+          if (e.webkitCompassHeading != null) {
+            compassHeading = e.webkitCompassHeading; // iOS
+          } else if (e.absolute && e.alpha != null) {
+            compassHeading = 360 - e.alpha; // absolute orientation Android
+          }
+
+          // Periodically recalibrate alpha offset from compass
+          const now = Date.now();
+          if (compassHeading !== null && (now - lastCalibrateTime > CALIBRATE_INTERVAL)) {
+            // compass gives heading (0=N, 90=E), alpha gives device yaw
+            alphaOffset = (360 - compassHeading) - e.alpha;
+            lastCalibrateTime = now;
+          }
+
+          // Apply compass correction
+          if (alphaOffset !== null) {
+            correctedAlpha = e.alpha + alphaOffset;
+            if (correctedAlpha < 0) correctedAlpha += 360;
+            if (correctedAlpha >= 360) correctedAlpha -= 360;
+          }
+
+          // Low-pass filter for smoothness
+          if (smoothAlpha === null) {
+            smoothAlpha = correctedAlpha;
+            smoothBeta = e.beta;
+            smoothGamma = e.gamma;
+          } else {
+            smoothAlpha = smoothAngle(smoothAlpha, correctedAlpha, SMOOTH_FACTOR);
+            smoothBeta = smoothBeta + (e.beta - smoothBeta) * SMOOTH_FACTOR;
+            smoothGamma = smoothGamma + (e.gamma - smoothGamma) * SMOOTH_FACTOR;
+          }
+
+          fbOrientAlpha = smoothAlpha;
+        }
+        if (e.beta != null) fbOrientBeta = smoothBeta !== null ? smoothBeta : e.beta;
+        if (e.gamma != null) fbOrientGamma = smoothGamma !== null ? smoothGamma : e.gamma;
       }
       window.addEventListener("deviceorientation", onOrientation, true);
 
@@ -593,17 +714,34 @@
           map: drawingTexture,
           transparent: true,
           side: THREE.DoubleSide,
-          depthTest: false
         });
         const mesh = new THREE.Mesh(geometry, material);
 
-        // Place 2m in front of the camera's current look direction
-        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-        mesh.position.copy(cam.position).add(dir.multiplyScalar(2));
-        mesh.quaternion.copy(cam.quaternion);
+        // Estimate the surface the camera is aimed at
+        const est = estimateSurfacePlacement(cam);
+
+        // Position on estimated surface with small offset to avoid z-fighting
+        mesh.position.copy(est.position);
+        mesh.position.add(est.surfaceNormal.clone().multiplyScalar(0.005));
+
+        if (est.surfaceType === "wall") {
+          // Wall: face the drawing outward toward the camera
+          mesh.lookAt(cam.position);
+          mesh.rotateY(Math.PI);
+        } else {
+          // Floor / ceiling: lay the drawing flat on the surface
+          mesh.rotation.x = est.surfaceType === "floor" ? -Math.PI / 2 : Math.PI / 2;
+          // Align the drawing's "up" with the camera's horizontal forward
+          const camFwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+          camFwd.y = 0;
+          if (camFwd.length() > 0.001) {
+            camFwd.normalize();
+            mesh.rotation.z = -Math.atan2(camFwd.x, camFwd.z);
+          }
+        }
 
         sc.add(mesh);
-        arStatus.textContent = "✅ Placed! Move phone to see it pinned. Tap to place more.";
+        arStatus.textContent = "✅ Placed on " + est.surfaceType + "! Move phone to see it anchored.";
 
         // Auto-anchor: save GPS coords with this placement
         if (userLat !== null && userLng !== null) {
@@ -621,11 +759,25 @@
         const screenOrient = window.screen.orientation ? window.screen.orientation.angle : (window.orientation || 0);
         setDeviceQuaternion(fbCamera, fbOrientAlpha, fbOrientBeta, fbOrientGamma, screenOrient);
 
+        // Update surface reticle — shows where graffiti will snap
+        if (fbReticle) {
+          const est = estimateSurfacePlacement(fbCamera);
+          fbReticle.position.copy(est.position);
+          // Orient reticle flat on the estimated surface
+          const lookTarget = est.position.clone().add(est.surfaceNormal);
+          fbReticle.lookAt(lookTarget);
+          fbReticle.visible = true;
+          // Scale reticle proportional to distance so it stays readable
+          const dist = est.position.length();
+          const s = Math.max(dist * 0.3, 0.3);
+          fbReticle.scale.set(s, s, s);
+          arStatus.textContent = "Surface: " + est.surfaceType + " — tap to place!";
+        }
+
         fbRenderer.render(fbScene, fbCamera);
         requestAnimationFrame(renderFallbackAR);
       }
       requestAnimationFrame(renderFallbackAR);
-      arStatus.textContent = "Tap to place your drawing — move phone to look around";
 
       // ---- Auto-load nearby graffiti on AR start ----
       loadNearbyGraffiti();
@@ -633,22 +785,44 @@
 
     // ===================== GPS + GLOBAL GRAFFITI =====================
     let userLat = null, userLng = null, userBearing = 0;
+    let gpsWatchId = null;
     const gpsStatus = document.getElementById("ar-gps-status");
 
-    // Continuously track GPS position
-    if ("geolocation" in navigator) {
-      navigator.geolocation.watchPosition(
+    // Start GPS tracking — called on user gesture for iOS compatibility
+    function startGPSTracking() {
+      if (gpsWatchId !== null) return; // already tracking
+      if (!("geolocation" in navigator)) {
+        console.warn("Geolocation not available");
+        return;
+      }
+      gpsWatchId = navigator.geolocation.watchPosition(
         (pos) => {
           userLat = pos.coords.latitude;
           userLng = pos.coords.longitude;
           if (pos.coords.heading != null && !isNaN(pos.coords.heading)) {
             userBearing = pos.coords.heading;
           }
+          if (gpsStatus) {
+            gpsStatus.textContent = `📍 GPS: ${userLat.toFixed(5)}, ${userLng.toFixed(5)}`;
+          }
         },
-        (err) => { console.warn("GPS error:", err.message); },
-        { enableHighAccuracy: true, maximumAge: 5000 }
+        (err) => {
+          console.warn("GPS error:", err.code, err.message);
+          if (gpsStatus) {
+            const msgs = {
+              1: "⚠️ GPS: Permission denied. Allow location access in browser settings.",
+              2: "⚠️ GPS: Position unavailable. Try moving outdoors.",
+              3: "⚠️ GPS: Timed out. Retrying..."
+            };
+            gpsStatus.textContent = msgs[err.code] || ("⚠️ GPS: " + err.message);
+          }
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
       );
     }
+
+    // Try starting GPS on load (works on Android/desktop, may silently fail on iOS)
+    startGPSTracking();
 
     // Also use compass for bearing when GPS heading unavailable
     window.addEventListener("deviceorientation", (e) => {
@@ -662,11 +836,30 @@
     // Share graffiti globally (save to MongoDB)
     document.getElementById("ar-share-btn").addEventListener("click", async () => {
       if (userLat === null || userLng === null) {
-        if (gpsStatus) gpsStatus.textContent = "⚠️ Waiting for GPS... make sure location is enabled.";
-        return;
+        if (gpsStatus) gpsStatus.textContent = "📡 Acquiring GPS position...";
+        // Try a one-shot position request as fallback
+        try {
+          const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true, timeout: 15000
+            });
+          });
+          userLat = pos.coords.latitude;
+          userLng = pos.coords.longitude;
+          startGPSTracking();
+        } catch (err) {
+          const msgs = {
+            1: "❌ Location permission denied. Allow location access in your browser/device settings and reload.",
+            2: "❌ Position unavailable. Make sure GPS/Location Services are turned on.",
+            3: "❌ GPS timed out. Try again outdoors or check device location settings."
+          };
+          if (gpsStatus) gpsStatus.textContent = msgs[err.code] || ("❌ GPS error: " + err.message);
+          return;
+        }
       }
 
       const imageData = canvas.toDataURL("image/png");
+      const description = document.getElementById("ar-description").value.trim();
       if (gpsStatus) gpsStatus.textContent = "Uploading...";
 
       try {
@@ -678,12 +871,14 @@
             lng: userLng,
             image: imageData,
             scale: arScaleCm,
-            bearing: userBearing
+            bearing: userBearing,
+            description: description
           })
         });
         const result = await resp.json();
         if (resp.ok) {
           if (gpsStatus) gpsStatus.textContent = "✅ Shared globally! Anyone nearby can see it.";
+          document.getElementById("ar-description").value = "";
         } else {
           if (gpsStatus) gpsStatus.textContent = "❌ " + (result.error || "Upload failed");
         }
@@ -697,8 +892,25 @@
 
     async function loadNearbyGraffiti() {
       if (userLat === null || userLng === null) {
-        if (gpsStatus) gpsStatus.textContent = "⚠️ Waiting for GPS...";
-        return;
+        if (gpsStatus) gpsStatus.textContent = "📡 Acquiring GPS position...";
+        try {
+          const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true, timeout: 15000
+            });
+          });
+          userLat = pos.coords.latitude;
+          userLng = pos.coords.longitude;
+          startGPSTracking();
+        } catch (err) {
+          const msgs = {
+            1: "❌ Location permission denied. Allow in browser settings.",
+            2: "❌ Position unavailable. Check GPS/Location Services.",
+            3: "❌ GPS timed out. Try outdoors."
+          };
+          if (gpsStatus) gpsStatus.textContent = msgs[err.code] || ("❌ GPS error: " + err.message);
+          return;
+        }
       }
 
       if (gpsStatus) gpsStatus.textContent = "📡 Loading nearby graffiti...";
@@ -772,6 +984,11 @@
           img.src = item.image;
         }
 
+        // Show a clickable list of nearby graffiti
+        if (items.length > 0) {
+          showNearbyList(items);
+        }
+
         if (loaded === 0 && gpsStatus) {
           gpsStatus.textContent = `🌍 ${items.length} graffiti nearby (loading images...)`;
         }
@@ -787,6 +1004,30 @@
       c.height = img.height;
       c.getContext("2d").drawImage(img, 0, 0);
       return c;
+    }
+
+    // Show clickable list of nearby graffiti in AR overlay
+    function showNearbyList(items) {
+      let list = document.getElementById("nearby-list");
+      if (!list) {
+        list = document.createElement("div");
+        list.id = "nearby-list";
+        list.className = "nearby-list";
+        arOverlay.appendChild(list);
+      }
+      list.innerHTML = "<h4>🌍 Nearby Graffiti</h4>";
+      items.forEach(item => {
+        const card = document.createElement("a");
+        card.href = "/graffiti/" + item.id;
+        card.className = "nearby-card";
+        card.innerHTML = `<img src="${item.image}" alt="graffiti">`
+          + `<div class="nearby-card-info">`
+          + `<span class="nearby-card-author">${item.author || 'Anon'}</span>`
+          + `<span class="nearby-card-desc">${(item.description || '').slice(0, 60)}</span>`
+          + `<span class="nearby-card-stats">❤️ ${item.likes || 0} · 💬 ${item.comments || 0}</span>`
+          + `</div>`;
+        list.appendChild(card);
+      });
     }
 
     // Clean up fallback AR on exit
