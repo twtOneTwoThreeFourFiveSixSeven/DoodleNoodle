@@ -231,13 +231,17 @@ function renderPlacingImage() {
     const stampBtn = document.createElement("button");
     stampBtn.textContent = "✅ Stamp";
     stampBtn.style.cssText = "position:absolute;bottom:70px;left:50%;transform:translateX(-50%);padding:10px 24px;border:none;border-radius:6px;background:#27ae60;color:white;font-size:16px;font-weight:bold;cursor:pointer;z-index:51;";
-    stampBtn.addEventListener("click", (e) => { e.preventDefault(); commitImage(); });
+    stampBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); commitImage(); });
+    stampBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+    stampBtn.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
     placeOverlay.appendChild(stampBtn);
 
     const cancelBtn = document.createElement("button");
     cancelBtn.textContent = "❌ Cancel";
     cancelBtn.style.cssText = "position:absolute;bottom:70px;left:calc(50% + 90px);padding:10px 24px;border:none;border-radius:6px;background:#e74c3c;color:white;font-size:16px;font-weight:bold;cursor:pointer;z-index:51;";
-    cancelBtn.addEventListener("click", (e) => { e.preventDefault(); removePlaceOverlay(); placingImage = null; });
+    cancelBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); removePlaceOverlay(); placingImage = null; });
+    cancelBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+    cancelBtn.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
     placeOverlay.appendChild(cancelBtn);
 
     document.body.appendChild(placeOverlay);
@@ -352,6 +356,7 @@ function removePlaceOverlay(committed = false) {
   } catch (err) {
     console.error("Error in removePlaceOverlay:", err);
     alert("Error in removePlaceOverlay: " + err.message);
+
   }
 }
 
