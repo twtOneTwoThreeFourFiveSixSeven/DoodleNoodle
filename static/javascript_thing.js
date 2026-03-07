@@ -301,8 +301,6 @@
       const planeHeight = planeWidth / aspect;
 
       const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
-      // Rotate geometry so its face normal (+Z) aligns with the pose's +Y (surface normal)
-      geometry.rotateX(-Math.PI / 2);
 
       const material = new THREE.MeshBasicMaterial({
         map: drawingTexture,
@@ -311,29 +309,54 @@
       });
 
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.matrixAutoUpdate = false;
 
-      // Position the drawing at the hit point, oriented along the surface
+      // Decompose hit pose
       const matrix = new THREE.Matrix4();
       matrix.fromArray(pose.transform.matrix);
 
       const position = new THREE.Vector3();
       const quaternion = new THREE.Quaternion();
-      const scale = new THREE.Vector3();
-      matrix.decompose(position, quaternion, scale);
+      const scaleVec = new THREE.Vector3();
+      matrix.decompose(position, quaternion, scaleVec);
+
+      // Extract surface normal from the hit pose (+Y axis in pose space)
+      const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
+
+      // Classify surface: wall (normal mostly horizontal) vs floor/ceiling
+      const isWall = Math.abs(surfaceNormal.y) < 0.5;
+      const isCeiling = !isWall && surfaceNormal.y < -0.5;
+      const surfaceType = isWall ? "wall" : (isCeiling ? "ceiling" : "floor");
 
       mesh.position.copy(position);
-      mesh.quaternion.copy(quaternion);
+
+      if (isWall) {
+        // Wall: make the plane face outward from the wall
+        const target = position.clone().add(surfaceNormal);
+        mesh.lookAt(target);
+      } else {
+        // Floor/ceiling: lay the plane flat facing up/down
+        mesh.rotation.x = isCeiling ? Math.PI / 2 : -Math.PI / 2;
+        // Align drawing "up" toward camera forward direction
+        const camForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        camForward.y = 0;
+        if (camForward.length() > 0.001) {
+          camForward.normalize();
+          mesh.rotation.z = -Math.atan2(camForward.x, camForward.z);
+        }
+      }
 
       // Small offset along surface normal to prevent z-fighting
-      const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
-      mesh.position.add(surfaceNormal.multiplyScalar(0.002));
+      mesh.position.add(surfaceNormal.clone().multiplyScalar(0.003));
 
       mesh.updateMatrix();
-      lastPlacedHeight = position.y; // store for global sharing
+      mesh.matrixAutoUpdate = false;
+      // Store orientation so anchor updates can preserve it
+      mesh.userData.surfaceType = surfaceType;
+      mesh.userData.placedQuaternion = mesh.quaternion.clone();
+      lastPlacedHeight = position.y;
 
       scene.add(mesh);
-      arStatus.textContent = "✅ Placed on surface at " + arScaleCm + "cm wide! Tap again to place more.";
+      arStatus.textContent = "✅ Placed on " + surfaceType + " at " + arScaleCm + "cm wide! Tap again to place more.";
       return mesh;
     }
 
@@ -498,7 +521,16 @@
             lastHitPose = hit.getPose(xrRefSpace);
             reticleModel.visible = true;
             reticleModel.matrix.fromArray(lastHitPose.transform.matrix);
-            arStatus.textContent = "Surface detected — tap to place!";
+            // Detect surface type from hit normal
+            const hitQ = new THREE.Quaternion(
+              lastHitPose.transform.orientation.x,
+              lastHitPose.transform.orientation.y,
+              lastHitPose.transform.orientation.z,
+              lastHitPose.transform.orientation.w
+            );
+            const hitNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(hitQ);
+            const hitSurface = Math.abs(hitNormal.y) < 0.5 ? "wall" : (hitNormal.y < -0.5 ? "ceiling" : "floor");
+            arStatus.textContent = "Surface: " + hitSurface + " — tap to place!";
           } else {
             reticleModel.visible = false;
             lastHitResult = null;
@@ -507,10 +539,17 @@
           }
 
           // Update anchored meshes — tracked by ARCore for rock-solid placement
+          // Only update position from anchor; keep the orientation we computed at placement
           for (const [anchor, mesh] of xrAnchors) {
             const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace);
             if (anchorPose) {
-              mesh.matrix.fromArray(anchorPose.transform.matrix);
+              const pos = anchorPose.transform.position;
+              mesh.position.set(pos.x, pos.y, pos.z);
+              // Restore our computed orientation (wall lookAt / floor rotation)
+              if (mesh.userData.placedQuaternion) {
+                mesh.quaternion.copy(mesh.userData.placedQuaternion);
+              }
+              mesh.updateMatrix();
             }
           }
 
