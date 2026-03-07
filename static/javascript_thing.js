@@ -512,8 +512,10 @@
       const fb3d = document.getElementById("fallback-3d");
 
       function handleFallbackPlace(evt) {
-        // Don't place if tap was on UI elements
-        const target = document.elementFromPoint(evt.clientX || evt.pageX, evt.clientY || evt.pageY);
+        const clientX = evt.clientX || evt.pageX;
+        const clientY = evt.clientY || evt.pageY;
+
+        const target = document.elementFromPoint(clientX, clientY);
         if (target && (
           target.closest("#ar-scale-bar") ||
           target.closest("#ar-exit-btn") ||
@@ -522,7 +524,22 @@
           return;
         }
 
-        placeDrawingInScene(fbScene, fbCamera);
+        // Raycast from tap point to find a virtual wall
+        const mouse = new THREE.Vector2(
+          (clientX / window.innerWidth) * 2 - 1,
+          -(clientY / window.innerHeight) * 2 + 1
+        );
+
+        raycaster.setFromCamera(mouse, fbCamera);
+        const walls = fbScene.children.filter(c => c.name === "wall");
+        const hits = raycaster.intersectObjects(walls);
+
+        if (hits.length > 0) {
+          const hit = hits[0];
+          placeDrawingOnWall(fbScene, hit.point, hit.face.normal.clone().transformDirection(hit.object.matrixWorld), hit.object);
+        } else {
+          placeDrawingInFront(fbScene, fbCamera);
+        }
       }
 
       fb3d.addEventListener("click", handleFallbackPlace);
@@ -532,7 +549,7 @@
         handleFallbackPlace(touch);
       });
 
-      function placeDrawingInScene(sc, cam) {
+      function placeDrawingOnWall(sc, point, normal, wall) {
         const drawingTexture = new THREE.CanvasTexture(canvas);
         drawingTexture.needsUpdate = true;
 
@@ -550,13 +567,65 @@
         });
         const mesh = new THREE.Mesh(geometry, material);
 
-        // Place 2m in front of the camera's current look direction
-        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-        mesh.position.copy(cam.position).add(dir.multiplyScalar(2));
-        mesh.quaternion.copy(cam.quaternion);
+        // Offset slightly off the wall to prevent z-fighting
+        const offsetPoint = point.clone().add(normal.clone().multiplyScalar(0.01));
+        mesh.position.copy(offsetPoint);
+
+        // Face perpendicular to the wall — look along the surface normal
+        const lookTarget = offsetPoint.clone().add(normal);
+        mesh.lookAt(lookTarget);
 
         sc.add(mesh);
-        arStatus.textContent = "✅ Placed! Move phone to see it pinned. Tap to place more.";
+      }
+
+      // Replace the old placeDrawingInScene with this
+      function placeDrawingInFront(sc, cam) {
+        const drawingTexture = new THREE.CanvasTexture(canvas);
+        drawingTexture.needsUpdate = true;
+
+        const currentScale = parseInt(arScaleSlider.value);
+        const aspect = canvas.width / canvas.height;
+        const planeWidth = currentScale / 100;
+        const planeHeight = planeWidth / aspect;
+
+        const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
+        const material = new THREE.MeshBasicMaterial({
+          map: drawingTexture,
+          transparent: true,
+          side: THREE.DoubleSide,
+          depthTest: false
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+
+        // Place 2m in front of camera
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+        const pos = cam.position.clone().add(dir.multiplyScalar(2));
+        mesh.position.copy(pos);
+
+        // Orient perpendicular to the wall, NOT facing the camera
+        // Snap to nearest cardinal wall direction
+        const absX = Math.abs(dir.x);
+        const absY = Math.abs(dir.y);
+        const absZ = Math.abs(dir.z);
+
+        const wallNormal = new THREE.Vector3();
+
+        if (absY > absX && absY > absZ) {
+          // Looking mostly up/down → place on floor/ceiling
+          wallNormal.set(0, dir.y > 0 ? -1 : 1, 0);
+        } else if (absX > absZ) {
+          // Looking mostly left/right → place on side wall
+          wallNormal.set(dir.x > 0 ? -1 : 1, 0, 0);
+        } else {
+          // Looking mostly forward/back → place on front/back wall
+          wallNormal.set(0, 0, dir.z > 0 ? -1 : 1);
+        }
+
+        // Face outward from the wall (along the normal)
+        const lookTarget = pos.clone().add(wallNormal);
+        mesh.lookAt(lookTarget);
+
+        sc.add(mesh);
       }
 
       // ---- Render loop ----
