@@ -103,11 +103,20 @@
       opacity: 0.7;
       transition: width 0.15s ease, height 0.15s ease;
     }
-    #ar-scale-bar {
+    #ar-top-controls {
       position: absolute;
       top: 60px;
       left: 50%;
       transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      z-index: 200;
+      pointer-events: auto;
+      touch-action: auto;
+    }
+    #ar-scale-bar {
       background: rgba(0, 0, 0, 0.6);
       padding: 10px 20px;
       border-radius: 10px;
@@ -116,7 +125,6 @@
       align-items: center;
       gap: 10px;
       z-index: 200;
-      /* Ensure touch events reach the slider on mobile */
       touch-action: auto;
       pointer-events: auto;
     }
@@ -183,13 +191,11 @@
       accent-color: #e74c3c;
     }
     #ar-action-bar {
-      position: absolute;
-      top: 110px;
-      left: 50%;
-      transform: translateX(-50%);
       display: flex;
       gap: 10px;
-      z-index: 101;
+      z-index: 201;
+      pointer-events: auto;
+      touch-action: auto;
     }
     #ar-action-bar button {
       position: static;
@@ -203,14 +209,18 @@
     #ar-share-btn { background: #27ae60; color: white; }
     #ar-load-btn { background: #2980b9; color: white; }
     #ar-gps-status {
-      position: absolute;
-      top: 155px;
-      left: 0; right: 0;
+      position: relative;
+      top: 44px;
+      left: 0;
+      right: 0;
       text-align: center;
+      background: none;
       color: #ffd700;
-      font-size: 13px;
-      text-shadow: 0 0 6px black;
+      font-size: 12px;
+      padding: 4px 8px;
       z-index: 101;
+      pointer-events: none;
+      text-shadow: 0 0 6px black;
     }
     #ar-scale-label {
       color: white;

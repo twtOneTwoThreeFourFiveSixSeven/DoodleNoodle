@@ -45,31 +45,19 @@
   <div id="ar-overlay">
     <div id="ar-version"
       style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.5);color:#0f0;padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace;z-index:100;">
-      v2</div>
+      v2.1</div>
     <div id="ar-status">Point at a wall and tap to place your drawing</div>
     <div class="reticle-hint" id="reticle"></div>
-    <div id="ar-scale-bar" style="font-size:12px;">
-      <div style="margin-bottom:4px;">
-        <label>🧱 <select id="ar-surface-mode" style="background:#333;color:white;border:1px solid #555;border-radius:4px;padding:2px;font-size:11px;">
-            <option value="auto">Auto</option>
-            <option value="wall">Wall</option>
-            <option value="floor">Floor</option>
-          </select>
-        </label>
-      </div>
-      <label style="display:inline;">📏 <input type="range" id="ar-scale-slider" min="10" max="300" value="50" style="width:80px;"></label>
-      <span id="ar-scale-label" style="margin-left:4px;">50cm</span>
-      <br>
-      <label style="display:inline;">🔄 <input type="range" id="ar-rotate-slider" min="-180" max="180" value="0" style="width:80px;"></label>
-      <span id="ar-rotate-label" style="margin-left:4px;">0°</span>
-    </div>
-    <div id="ar-action-bar">
-      <input type="text" id="ar-description" placeholder="Describe your graffiti..." maxlength="500">
-      <button id="ar-share-btn">Confirm All Updates</button>
-      <button id="ar-load-btn">📡 Load Nearby</button>
-    </div>
     <div id="ar-gps-status"></div>
     <button id="ar-exit-btn">← Back to Draw</button>
+    <div id="ar-top-controls">
+      <div id="ar-action-bar">
+        <input type="text" id="ar-description" placeholder="Describe your graffiti..." maxlength="500">
+        <button id="ar-share-btn">Confirm All Updates</button>
+        <button id="ar-load-btn">📡 Load Nearby</button>
+      </div>
+    </div>
+    
   </div>
 
   <script src="{{ url_for('static', filename='javascript_thing.js', v='2.0') }}"></script>

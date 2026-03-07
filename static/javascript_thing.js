@@ -891,13 +891,20 @@ document.getElementById("ar-load-btn").addEventListener("click", () => loadNearb
 
 async function loadNearbyGraffiti() {
   // Must have an active AR scene and known GPS anchor point
-  if (!scene || arStartLat === null || arStartLng === null) return;
-  if (userLat === null || userLng === null) return;
+  if (!scene || arStartLat === null || arStartLng === null) {
+    console.log("loadNearby: skipped — scene:", !!scene, "arStartLat:", arStartLat, "arStartLng:", arStartLng);
+    return;
+  }
+  if (userLat === null || userLng === null) {
+    console.log("loadNearby: skipped — no user GPS");
+    return;
+  }
 
   try {
     const resp = await fetch(`/api/graffiti/nearby?lat=${userLat}&lng=${userLng}&radius=200`);
     if (!resp.ok) return;
     const items = await resp.json();
+    console.log("loadNearby: got", items.length, "items");
 
     const mLat = 111320;
     const mLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
@@ -911,8 +918,17 @@ async function loadNearbyGraffiti() {
       const { image, scale, bearing, height, surfaceType, quaternion, id } = item;
 
       const img = new Image();
+      img.crossOrigin = "anonymous";
       img.src = image;
-      await new Promise((resolve) => { img.onload = resolve; });
+      try {
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+        });
+      } catch (e) {
+        console.warn("Failed to load image for graffiti", id, e);
+        continue;
+      }
 
       // CanvasTexture handles power-of-two scaling automatically
       const tex = new THREE.CanvasTexture(img);
@@ -962,12 +978,17 @@ async function loadNearbyGraffiti() {
     }
 
     if (gpsStatus) {
-      gpsStatus.textContent = loaded > 0
-        ? `🎨 ${loaded} piece${loaded > 1 ? "s" : ""} loaded nearby`
-        : "No graffiti nearby";
+      if (items.length === 0) {
+        gpsStatus.textContent = "No graffiti nearby (0 from server)";
+      } else if (loaded > 0) {
+        gpsStatus.textContent = `🎨 ${loaded} piece${loaded > 1 ? "s" : ""} loaded nearby`;
+      } else {
+        gpsStatus.textContent = `${items.length} found but already loaded`;
+      }
     }
   } catch (err) {
     console.error("loadNearbyGraffiti:", err);
+    if (gpsStatus) gpsStatus.textContent = "❌ Load error: " + err.message;
   }
 }
 
