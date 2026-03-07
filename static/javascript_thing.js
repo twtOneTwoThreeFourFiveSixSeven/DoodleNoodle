@@ -360,33 +360,60 @@
       
       if (isWall) {
         // WALL: Mesh lies flat against wall, facing outward
-        if (isCeiling) {
-          mesh.rotation.x = Math.PI;
+        // The surface normal points OUT of the wall
+        
+        // 1. Point the mesh's Z-axis along the surface normal (so the drawing faces out)
+        // 2. Point the mesh's Y-axis (up) towards the world's Y-axis (up)
+        const zAxis = surfaceNormal.clone().normalize();
+        
+        // World UP
+        const up = new THREE.Vector3(0, 1, 0);
+        
+        // The X-axis (right) is UP cross Z
+        let xAxis = new THREE.Vector3().crossVectors(up, zAxis);
+        
+        // If normal is perfectly straight up/down, fallback handling
+        if (xAxis.lengthSq() < 0.001) {
+          xAxis.set(1, 0, 0);
         } else {
-          mesh.rotation.x = 0;
+          xAxis.normalize();
         }
-        const toCamera = camPos.clone().sub(position);
-        toCamera.y = 0;
-        if (toCamera.length() > 0.01) {
-          toCamera.normalize();
-          const angle = Math.atan2(toCamera.x, toCamera.z);
-          mesh.rotation.y = angle;
-        }
+        
+        // Recompute true Y-axis to guarantee orthogonality
+        const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
+        
+        const rotMatrix = new THREE.Matrix4();
+        rotMatrix.makeBasis(xAxis, yAxis, zAxis);
+        mesh.quaternion.setFromRotationMatrix(rotMatrix);
+        
       } else {
         // FLOOR or CEILING: Mesh lies flat (horizontal)
-        const up = new THREE.Vector3(0, 1, 0);
-        let meshUp = up.clone();
-        const camDir = camPos.clone().sub(position).normalize();
-        const onWallPlane = camDir.clone().sub(surfaceNormal.clone().multiplyScalar(camDir.dot(surfaceNormal)));
-        if (onWallPlane.length() > 0.01) {
-          onWallPlane.normalize();
-          meshUp.set(0, 1, 0);
-          meshUp.add(onWallPlane.multiplyScalar(0.1));
-          meshUp.normalize();
+        
+        // The surface normal is either up (0, 1, 0) for floor or down (0, -1, 0) for ceiling
+        const zAxis = surfaceNormal.clone().normalize();
+        
+        // To orient the graffiti correctly, we want its "up" (Y-axis) to point away from the camera
+        // So when looking down, the top of the graffiti points forward
+        const camFwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        
+        // Project camera forward vector onto the floor plane
+        const fwdOnPlane = camFwd.clone().sub(surfaceNormal.clone().multiplyScalar(camFwd.dot(surfaceNormal)));
+        
+        let yAxis = new THREE.Vector3();
+        if (fwdOnPlane.lengthSq() > 0.001) {
+          yAxis.copy(fwdOnPlane).normalize();
+        } else {
+          yAxis.set(0, 0, -1);
         }
-        const zAxis = surfaceNormal.clone();
-        const xAxis = new THREE.Vector3().crossVectors(meshUp, zAxis).normalize();
-        const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
+        
+        // If it's a ceiling, invert the Y-axis so drawing isn't mirrored
+        if (isCeiling) {
+          yAxis.negate();
+        }
+        
+        // The X-axis (right) is Y cross Z
+        const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis).normalize();
+        
         const rotMatrix = new THREE.Matrix4();
         rotMatrix.makeBasis(xAxis, yAxis, zAxis);
         mesh.quaternion.setFromRotationMatrix(rotMatrix);
@@ -857,19 +884,36 @@
         lastPlacedHeight = est.position.y + CAMERA_HEIGHT; // absolute height from floor
 
         if (est.surfaceType === "wall") {
-          // Wall: face the drawing outward toward the camera
-          mesh.lookAt(cam.position);
-          mesh.rotateY(Math.PI);
+          // Wall: face the drawing outward, flat against the wall
+          const zAxis = est.surfaceNormal.clone().normalize();
+          const up = new THREE.Vector3(0, 1, 0);
+          const xAxis = new THREE.Vector3().crossVectors(up, zAxis).normalize();
+          const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
+          const rotMatrix = new THREE.Matrix4();
+          rotMatrix.makeBasis(xAxis, yAxis, zAxis);
+          mesh.quaternion.setFromRotationMatrix(rotMatrix);
         } else {
           // Floor / ceiling: lay the drawing flat on the surface
-          mesh.rotation.x = est.surfaceType === "floor" ? -Math.PI / 2 : Math.PI / 2;
-          // Align the drawing's "up" with the camera's horizontal forward
+          const zAxis = est.surfaceNormal.clone().normalize();
           const camFwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-          camFwd.y = 0;
-          if (camFwd.length() > 0.001) {
-            camFwd.normalize();
-            mesh.rotation.z = -Math.atan2(camFwd.x, camFwd.z);
+          const fwdOnPlane = camFwd.clone().sub(est.surfaceNormal.clone().multiplyScalar(camFwd.dot(est.surfaceNormal)));
+          
+          let yAxis = new THREE.Vector3();
+          if (fwdOnPlane.lengthSq() > 0.001) {
+            yAxis.copy(fwdOnPlane).normalize();
+          } else {
+             yAxis.set(0, 0, -1);
           }
+           
+          // Invert Y axis for ceiling to avoid mirroring
+          if (est.surfaceType === "ceiling") {
+            yAxis.negate();
+          }
+          
+          const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis).normalize();
+          const rotMatrix = new THREE.Matrix4();
+          rotMatrix.makeBasis(xAxis, yAxis, zAxis);
+          mesh.quaternion.setFromRotationMatrix(rotMatrix);
         }
 
         sc.add(mesh);
