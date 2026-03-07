@@ -94,6 +94,14 @@ def app_page():
     return render_template("thing.html", user=user)
 
 
+@app.route("/create-post")
+def create_post():
+    user = session.get("user")
+    if not user:
+        return redirect(url_for("login"))
+    return render_template("create-post.html", user=user)
+
+
 @app.route("/api/graffiti", methods=["POST"])
 def save_graffiti():
     """Save graffiti with GPS location to MongoDB."""
