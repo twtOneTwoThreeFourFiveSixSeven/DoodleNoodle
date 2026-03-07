@@ -360,56 +360,36 @@
       
       if (isWall) {
         // WALL: Mesh lies flat against wall, facing outward
-        // Use the surface normal directly to orient the mesh
-        // The mesh's +Z axis should point along the surface normal (out from wall)
-        
-        // Create rotation that aligns mesh's Z-axis with surface normal
-        const up = new THREE.Vector3(0, 1, 0);
-        
-        // If normal is nearly horizontal, use world up for the mesh's up direction
-        // Otherwise use the horizontal component of camera direction
-        let meshUp = up.clone();
-        
-        // Project camera direction onto wall plane for natural "up" feel
-        const camDir = camPos.clone().sub(position).normalize();
-        const onWallPlane = camDir.clone().sub(surfaceNormal.clone().multiplyScalar(camDir.dot(surfaceNormal)));
-        if (onWallPlane.length() > 0.01) {
-          onWallPlane.normalize();
-          // Use vertical component from world up, horizontal from camera
-          meshUp.set(0, 1, 0);
-          meshUp.add(onWallPlane.multiplyScalar(0.1)); // Slight tilt toward viewer
-          meshUp.normalize();
-        }
-        
-        // Build rotation matrix: Z = normal, Y = up, X = cross
-        const zAxis = surfaceNormal.clone();
-        const xAxis = new THREE.Vector3().crossVectors(meshUp, zAxis).normalize();
-        const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
-        
-        const rotMatrix = new THREE.Matrix4();
-        rotMatrix.makeBasis(xAxis, yAxis, zAxis);
-        mesh.quaternion.setFromRotationMatrix(rotMatrix);
-        
-      } else {
-        // FLOOR or CEILING: Mesh lies flat (horizontal)
-        // Mesh's +Y should point toward the surface normal (up for floor, down for ceiling)
-        
         if (isCeiling) {
-          // Ceiling: mesh faces downward, texture readable from below
-          mesh.rotation.x = Math.PI; // Flip to face down
+          mesh.rotation.x = Math.PI;
         } else {
-          // Floor: mesh faces upward
           mesh.rotation.x = 0;
         }
-        
-        // Rotate around Y to face the camera naturally
         const toCamera = camPos.clone().sub(position);
-        toCamera.y = 0; // Flatten to horizontal
+        toCamera.y = 0;
         if (toCamera.length() > 0.01) {
           toCamera.normalize();
           const angle = Math.atan2(toCamera.x, toCamera.z);
           mesh.rotation.y = angle;
         }
+      } else {
+        // FLOOR or CEILING: Mesh lies flat (horizontal)
+        const up = new THREE.Vector3(0, 1, 0);
+        let meshUp = up.clone();
+        const camDir = camPos.clone().sub(position).normalize();
+        const onWallPlane = camDir.clone().sub(surfaceNormal.clone().multiplyScalar(camDir.dot(surfaceNormal)));
+        if (onWallPlane.length() > 0.01) {
+          onWallPlane.normalize();
+          meshUp.set(0, 1, 0);
+          meshUp.add(onWallPlane.multiplyScalar(0.1));
+          meshUp.normalize();
+        }
+        const zAxis = surfaceNormal.clone();
+        const xAxis = new THREE.Vector3().crossVectors(meshUp, zAxis).normalize();
+        const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
+        const rotMatrix = new THREE.Matrix4();
+        rotMatrix.makeBasis(xAxis, yAxis, zAxis);
+        mesh.quaternion.setFromRotationMatrix(rotMatrix);
       }
 
       // Position mesh ON the surface with tiny offset to prevent z-fighting
