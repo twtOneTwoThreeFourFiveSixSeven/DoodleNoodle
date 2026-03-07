@@ -9,6 +9,23 @@
       canvas.height = window.innerHeight - toolbarHeight;
       canvas.style.width = canvas.width + "px";
       canvas.style.height = canvas.height + "px";
+
+      // Calculate canvas center in pixels
+      const centerX = Math.floor(canvas.width / 2);
+      const centerY = Math.floor(canvas.height / 2);
+
+      // Offset the grid so an intersection lands exactly at center
+      // We want centerX and centerY to be exact multiples of 10 (half of 20px tile)
+      const offsetX = centerX % 10;
+      const offsetY = centerY % 10;
+      canvas.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
+
+      // Position the crosshair relative to the canvas, not the viewport
+      const crosshair = document.getElementById("crosshair");
+      if (crosshair) {
+        crosshair.style.top = toolbarHeight + "px";
+        crosshair.style.height = canvas.height + "px";
+      }
     }
     resizeCanvas();
 
@@ -85,14 +102,20 @@
     let camera = null;
     let reticleModel = null;
     let lastHitPose = null;
-    let arScaleCm = 50; // default 50cm
 
     // Scale slider
     const arScaleSlider = document.getElementById("ar-scale-slider");
     const arScaleLabel = document.getElementById("ar-scale-label");
     const reticleEl = document.getElementById("reticle");
+    let arScaleCm = 50;
 
     if (arScaleSlider) {
+      // Prevent slider touches from bubbling to the fallback canvas
+      arScaleSlider.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
+      arScaleSlider.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: false });
+      arScaleSlider.addEventListener("click", (e) => e.stopPropagation());
+      arScaleSlider.addEventListener("pointerdown", (e) => e.stopPropagation());
+
       arScaleSlider.addEventListener("input", () => {
         arScaleCm = parseInt(arScaleSlider.value);
 
@@ -137,6 +160,7 @@
 
     // Create a plane with the drawing texture, oriented to face the detected surface
     function placeDrawingAtHit(pose) {
+      // Trim the canvas to only the drawn content, centered on the crosshair
       const drawingTexture = new THREE.CanvasTexture(canvas);
       drawingTexture.needsUpdate = true;
 
@@ -144,6 +168,8 @@
       const planeWidth = arScaleCm / 100; // convert cm to meters
       const planeHeight = planeWidth / aspect;
 
+      // PlaneGeometry is centered at origin by default,
+      // so mesh.position = hitPoint puts the drawing's center at the hit point
       const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
       const material = new THREE.MeshBasicMaterial({
         map: drawingTexture,
@@ -154,7 +180,6 @@
       const mesh = new THREE.Mesh(geometry, material);
       mesh.matrixAutoUpdate = false;
 
-      // Position the drawing at the hit point, oriented along the surface
       const matrix = new THREE.Matrix4();
       matrix.fromArray(pose.transform.matrix);
 
@@ -163,12 +188,12 @@
       const scale = new THREE.Vector3();
       matrix.decompose(position, quaternion, scale);
 
+      // Position centers the geometry on the hit point
       mesh.position.copy(position);
       mesh.quaternion.copy(quaternion);
       mesh.updateMatrix();
 
       scene.add(mesh);
-      arStatus.textContent = "✅ Placed at " + arScaleCm + "cm wide! Tap again to place more.";
     }
 
     // Start WebXR AR session
@@ -311,19 +336,38 @@
 
       const fallbackDrawings = [];
 
-      fCanvas.addEventListener("click", (e) => {
+      // Use pointerup instead of click for more reliable mobile handling
+      fCanvas.addEventListener("pointerup", (e) => {
+        // Don't place if the tap was on the scale bar, exit button, or status
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        if (target && (
+          target.closest("#ar-scale-bar") ||
+          target.closest("#ar-exit-btn") ||
+          target.closest("#ar-status")
+        )) {
+          return; // ignore taps on UI elements
+        }
+
         const img = new Image();
         img.src = canvas.toDataURL("image/png");
         img.onload = () => {
-          // Use arScaleCm to determine size relative to screen
-          const scaleFactor = arScaleCm / 100; // 0.1 to 3.0
+          // Read arScaleCm fresh each time (not a stale closure)
+          const currentScale = parseInt(arScaleSlider.value);
+          const scaleFactor = currentScale / 100;
           const size = Math.min(window.innerWidth, window.innerHeight) * scaleFactor;
           const aspect = img.width / img.height;
+          const w = size;
+          const h = size / aspect;
+
+          // Centre the image on the tap point
+          const centerX = e.clientX;
+          const centerY = e.clientY;
+
           fallbackDrawings.push({
-            x: e.clientX - size / 2,
-            y: e.clientY - (size / aspect) / 2,
-            width: size,
-            height: size / aspect,
+            x: centerX - w / 2,
+            y: centerY - h / 2,
+            width: w,
+            height: h,
             img
           });
         };
