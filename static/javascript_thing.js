@@ -238,10 +238,9 @@
     let reticleModel = null;
     let lastHitPose = null;
     let arScaleCm = 50; // default 50cm
-    let xrAnchors = new Map();     // WebXR spatial anchor -> THREE.Mesh
-    let lastHitResult = null;      // XRHitTestResult (for createAnchor)
     let arStartBearing = 0;        // compass heading when AR started
     let lastPlacedHeight = 1.5;    // last placed graffiti height (meters from floor)
+    const APP_VERSION = "1.2.0";   // Version number - update when making changes
 
     // Scale slider
     const arScaleSlider = document.getElementById("ar-scale-slider");
@@ -312,7 +311,7 @@
       scene.add(debugPlane);
     }
 
-    // Create a plane with the drawing texture, oriented to face the detected surface
+    // Create a plane with the drawing texture, oriented to lie FLAT on the detected surface
     function placeDrawingAtHit(pose) {
       const drawingTexture = new THREE.CanvasTexture(canvas);
       drawingTexture.needsUpdate = true;
@@ -331,7 +330,7 @@
 
       const mesh = new THREE.Mesh(geometry, material);
 
-      // Decompose hit pose
+      // Decompose hit pose to get position and surface orientation
       const matrix = new THREE.Matrix4();
       matrix.fromArray(pose.transform.matrix);
 
@@ -340,44 +339,99 @@
       const scaleVec = new THREE.Vector3();
       matrix.decompose(position, quaternion, scaleVec);
 
-      // Extract surface normal from the hit pose (+Y axis in pose space)
+      // Extract surface normal from the hit pose (+Y axis in pose space = surface normal)
       const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
+      surfaceNormal.normalize();
 
-      // Classify surface: wall (normal mostly horizontal) vs floor/ceiling
-      const isWall = Math.abs(surfaceNormal.y) < 0.5;
-      const isCeiling = !isWall && surfaceNormal.y < -0.5;
+      // Classify surface based on normal direction
+      // Wall: normal is mostly horizontal (|y| < 0.7)
+      // Floor: normal points up (y > 0.7)
+      // Ceiling: normal points down (y < -0.7)
+      const isWall = Math.abs(surfaceNormal.y) < 0.7;
+      const isCeiling = !isWall && surfaceNormal.y < -0.7;
       const surfaceType = isWall ? "wall" : (isCeiling ? "ceiling" : "floor");
 
-      mesh.position.copy(position);
-
+      // === CRITICAL: Align mesh FLAT against the surface ===
+      // The mesh should lie ON the surface, with its face parallel to the surface
+      
+      // Get camera position for determining "up" orientation of the graffiti
+      const camPos = new THREE.Vector3();
+      camera.getWorldPosition(camPos);
+      
       if (isWall) {
-        // Wall: make the plane face outward from the wall
-        const target = position.clone().add(surfaceNormal);
-        mesh.lookAt(target);
+        // WALL: Mesh lies flat against wall, facing outward
+        // Use the surface normal directly to orient the mesh
+        // The mesh's +Z axis should point along the surface normal (out from wall)
+        
+        // Create rotation that aligns mesh's Z-axis with surface normal
+        const up = new THREE.Vector3(0, 1, 0);
+        
+        // If normal is nearly horizontal, use world up for the mesh's up direction
+        // Otherwise use the horizontal component of camera direction
+        let meshUp = up.clone();
+        
+        // Project camera direction onto wall plane for natural "up" feel
+        const camDir = camPos.clone().sub(position).normalize();
+        const onWallPlane = camDir.clone().sub(surfaceNormal.clone().multiplyScalar(camDir.dot(surfaceNormal)));
+        if (onWallPlane.length() > 0.01) {
+          onWallPlane.normalize();
+          // Use vertical component from world up, horizontal from camera
+          meshUp.set(0, 1, 0);
+          meshUp.add(onWallPlane.multiplyScalar(0.1)); // Slight tilt toward viewer
+          meshUp.normalize();
+        }
+        
+        // Build rotation matrix: Z = normal, Y = up, X = cross
+        const zAxis = surfaceNormal.clone();
+        const xAxis = new THREE.Vector3().crossVectors(meshUp, zAxis).normalize();
+        const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
+        
+        const rotMatrix = new THREE.Matrix4();
+        rotMatrix.makeBasis(xAxis, yAxis, zAxis);
+        mesh.quaternion.setFromRotationMatrix(rotMatrix);
+        
       } else {
-        // Floor/ceiling: lay the plane flat facing up/down
-        mesh.rotation.x = isCeiling ? Math.PI / 2 : -Math.PI / 2;
-        // Align drawing "up" toward camera forward direction
-        const camForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-        camForward.y = 0;
-        if (camForward.length() > 0.001) {
-          camForward.normalize();
-          mesh.rotation.z = -Math.atan2(camForward.x, camForward.z);
+        // FLOOR or CEILING: Mesh lies flat (horizontal)
+        // Mesh's +Y should point toward the surface normal (up for floor, down for ceiling)
+        
+        if (isCeiling) {
+          // Ceiling: mesh faces downward, texture readable from below
+          mesh.rotation.x = Math.PI; // Flip to face down
+        } else {
+          // Floor: mesh faces upward
+          mesh.rotation.x = 0;
+        }
+        
+        // Rotate around Y to face the camera naturally
+        const toCamera = camPos.clone().sub(position);
+        toCamera.y = 0; // Flatten to horizontal
+        if (toCamera.length() > 0.01) {
+          toCamera.normalize();
+          const angle = Math.atan2(toCamera.x, toCamera.z);
+          mesh.rotation.y = angle;
         }
       }
 
-      // Small offset along surface normal to prevent z-fighting
-      mesh.position.add(surfaceNormal.clone().multiplyScalar(0.003));
+      // Position mesh ON the surface with tiny offset to prevent z-fighting
+      mesh.position.copy(position);
+      mesh.position.add(surfaceNormal.clone().multiplyScalar(0.002));
 
+      // LOCK THE MESH: Disable auto-updates so it stays fixed in world space
       mesh.updateMatrix();
+      mesh.updateMatrixWorld();
       mesh.matrixAutoUpdate = false;
-      // Store orientation so anchor updates can preserve it
+      mesh.matrixWorldAutoUpdate = false;
+      
+      // Store data for anchor updates
       mesh.userData.surfaceType = surfaceType;
-      mesh.userData.placedQuaternion = mesh.quaternion.clone();
+      mesh.userData.surfaceNormal = surfaceNormal.clone();
+      mesh.userData.lockedPosition = mesh.position.clone();
+      mesh.userData.lockedQuaternion = mesh.quaternion.clone();
+      mesh.userData.lockedMatrix = mesh.matrix.clone();
       lastPlacedHeight = position.y;
 
       scene.add(mesh);
-      arStatus.textContent = "✅ Placed on " + surfaceType + " at " + arScaleCm + "cm wide! Tap again to place more.";
+      arStatus.textContent = "🔒 LOCKED on " + surfaceType.toUpperCase() + " at " + arScaleCm + "cm — graffiti is now anchored in place!";
       return mesh;
     }
 
@@ -502,20 +556,10 @@
         const viewerSpace = await xrSession.requestReferenceSpace("viewer");
         xrHitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
 
-        // Tap to place + create spatial anchor
-        xrSession.addEventListener("select", async () => {
-          if (lastHitPose && lastHitResult) {
-            const mesh = placeDrawingAtHit(lastHitPose);
-            // Create a spatial anchor so graffiti stays rock-solid
-            if (lastHitResult.createAnchor) {
-              try {
-                const anchor = await lastHitResult.createAnchor();
-                xrAnchors.set(anchor, mesh);
-                arStatus.textContent = "\u2705 Anchored! Graffiti is locked in place.";
-              } catch (e) {
-                console.warn("Anchor creation failed, using static placement:", e);
-              }
-            }
+        // Tap to place graffiti (no anchors - just static placement)
+        xrSession.addEventListener("select", () => {
+          if (lastHitPose) {
+            placeDrawingAtHit(lastHitPose);
           }
         });
 
@@ -523,11 +567,6 @@
           arOverlay.style.display = "none";
           document.getElementById("draw-toolbar").style.display = "flex";
           document.getElementById("canvas").style.display = "block";
-          // Release all spatial anchors
-          for (const [anchor] of xrAnchors) {
-            if (anchor.delete) anchor.delete();
-          }
-          xrAnchors.clear();
           xrSession = null;
         });
 
@@ -587,21 +626,6 @@
             lastHitResult = null;
             lastHitPose = null;
             arStatus.textContent = "Scanning for surfaces... point at a wall or floor";
-          }
-
-          // Update anchored meshes — tracked by ARCore for rock-solid placement
-          // Only update position from anchor; keep the orientation we computed at placement
-          for (const [anchor, mesh] of xrAnchors) {
-            const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace);
-            if (anchorPose) {
-              const pos = anchorPose.transform.position;
-              mesh.position.set(pos.x, pos.y, pos.z);
-              // Restore our computed orientation (wall lookAt / floor rotation)
-              if (mesh.userData.placedQuaternion) {
-                mesh.quaternion.copy(mesh.userData.placedQuaternion);
-              }
-              mesh.updateMatrix();
-            }
           }
 
           renderer.render(scene, camera);
