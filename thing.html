@@ -36,7 +36,18 @@
     .toolbar button.active { background: white; color: black; }
     .toolbar label { color: white; font-size: 14px; }
     .toolbar input[type="range"] { width: 100px; }
-    #canvas { cursor: crosshair; border: 1px solid #ccc; }
+    #canvas {
+      cursor: crosshair;
+      border: 1px solid #ccc;
+      /* Checkerboard pattern to visualize transparency */
+      background-image:
+        linear-gradient(45deg, #ddd 25%, transparent 25%),
+        linear-gradient(-45deg, #ddd 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #ddd 75%),
+        linear-gradient(-45deg, transparent 75%, #ddd 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    }
     #ar-btn { background: #e74c3c; font-weight: bold; }
     #ar-btn:hover { background: #c0392b; }
 
@@ -111,8 +122,9 @@
     const ctx = canvas.getContext("2d");
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight - 50;
-    ctx.fillStyle = "white";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Transparent background — don't fill with white
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     let drawing = false, erasing = false, brushSize = 4;
 
@@ -126,7 +138,17 @@
     function draw(e) {
       if (!drawing) return; e.preventDefault(); const p = getPos(e);
       ctx.lineWidth = brushSize; ctx.lineCap = "round"; ctx.lineJoin = "round";
-      ctx.strokeStyle = erasing ? "white" : "black"; ctx.lineTo(p.x, p.y); ctx.stroke();
+
+      if (erasing) {
+        // Erase to transparency instead of painting white
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.strokeStyle = "rgba(0,0,0,1)";
+      } else {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = "black";
+      }
+
+      ctx.lineTo(p.x, p.y); ctx.stroke();
     }
     function stopDraw() { drawing = false; ctx.beginPath(); }
 
@@ -147,7 +169,8 @@
       brushSize = parseInt(e.target.value); document.getElementById("size-label").textContent = brushSize;
     });
     document.getElementById("clear-btn").addEventListener("click", () => {
-      ctx.fillStyle = "white"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // Clear to transparent instead of white
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
     });
     document.getElementById("save-btn").addEventListener("click", () => {
       const a = document.createElement("a"); a.download = "drawing.png"; a.href = canvas.toDataURL(); a.click();
@@ -155,7 +178,8 @@
     window.addEventListener("resize", () => {
       const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
       canvas.width = window.innerWidth; canvas.height = window.innerHeight - 50;
-      ctx.fillStyle = "white"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.putImageData(img, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.putImageData(img, 0, 0);
     });
 
     // ===================== AR MODE (WebXR) =====================
