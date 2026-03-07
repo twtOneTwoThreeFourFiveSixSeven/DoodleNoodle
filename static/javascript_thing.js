@@ -277,18 +277,39 @@
       });
     }
 
+    let debugNormalArrow = null;  // ArrowHelper showing surface normal
+    let debugPlane = null;        // translucent plane showing detected surface
+
     // Three.js scene setup
     function initThreeScene() {
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-      // Reticle — a ring that shows where surfaces are detected
+      // Reticle — a ring that shows where surfaces are detected (color changes per surface type)
       const ringGeo = new THREE.RingGeometry(0.05, 0.07, 32).rotateX(-Math.PI / 2);
       const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
       reticleModel = new THREE.Mesh(ringGeo, ringMat);
       reticleModel.visible = false;
       reticleModel.matrixAutoUpdate = false;
       scene.add(reticleModel);
+
+      // Debug: arrow showing surface normal direction (red=wall, green=floor, blue=ceiling)
+      debugNormalArrow = new THREE.ArrowHelper(
+        new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 0.15, 0x00ff00, 0.04, 0.03
+      );
+      debugNormalArrow.visible = false;
+      scene.add(debugNormalArrow);
+
+      // Debug: translucent quad showing the detected surface patch
+      const dbgGeo = new THREE.PlaneGeometry(0.3, 0.3);
+      const dbgMat = new THREE.MeshBasicMaterial({
+        color: 0x00ff00, transparent: true, opacity: 0.25,
+        side: THREE.DoubleSide, depthTest: false
+      });
+      debugPlane = new THREE.Mesh(dbgGeo, dbgMat);
+      debugPlane.visible = false;
+      debugPlane.matrixAutoUpdate = false;
+      scene.add(debugPlane);
     }
 
     // Create a plane with the drawing texture, oriented to face the detected surface
@@ -521,6 +542,7 @@
             lastHitPose = hit.getPose(xrRefSpace);
             reticleModel.visible = true;
             reticleModel.matrix.fromArray(lastHitPose.transform.matrix);
+
             // Detect surface type from hit normal
             const hitQ = new THREE.Quaternion(
               lastHitPose.transform.orientation.x,
@@ -530,9 +552,38 @@
             );
             const hitNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(hitQ);
             const hitSurface = Math.abs(hitNormal.y) < 0.5 ? "wall" : (hitNormal.y < -0.5 ? "ceiling" : "floor");
-            arStatus.textContent = "Surface: " + hitSurface + " — tap to place!";
+
+            // Debug colors: red=wall, green=floor, cyan=ceiling
+            const debugColors = { wall: 0xff3333, floor: 0x33ff33, ceiling: 0x33ccff };
+            const col = debugColors[hitSurface] || 0xffffff;
+            reticleModel.material.color.setHex(col);
+
+            // Debug: position arrow at hit point, pointing along surface normal
+            const hitPos = new THREE.Vector3(
+              lastHitPose.transform.position.x,
+              lastHitPose.transform.position.y,
+              lastHitPose.transform.position.z
+            );
+            if (debugNormalArrow) {
+              debugNormalArrow.position.copy(hitPos);
+              debugNormalArrow.setDirection(hitNormal);
+              debugNormalArrow.setColor(new THREE.Color(col));
+              debugNormalArrow.visible = true;
+            }
+
+            // Debug: translucent surface patch aligned to the hit
+            if (debugPlane) {
+              debugPlane.matrix.fromArray(lastHitPose.transform.matrix);
+              debugPlane.material.color.setHex(col);
+              debugPlane.visible = true;
+            }
+
+            arStatus.textContent = "[" + hitSurface.toUpperCase() + "] normal Y=" + hitNormal.y.toFixed(2)
+              + " (" + hitNormal.x.toFixed(2) + "," + hitNormal.y.toFixed(2) + "," + hitNormal.z.toFixed(2) + ") — tap to place!";
           } else {
             reticleModel.visible = false;
+            if (debugNormalArrow) debugNormalArrow.visible = false;
+            if (debugPlane) debugPlane.visible = false;
             lastHitResult = null;
             lastHitPose = null;
             arStatus.textContent = "Scanning for surfaces... point at a wall or floor";
