@@ -35,6 +35,18 @@
     .toolbar button.active { background: white; color: black; }
     .toolbar label { color: white; font-size: 14px; }
     .toolbar input[type="range"] { width: 100px; }
+    #color-picker {
+      width: 36px; height: 36px;
+      border: 2px solid #777; border-radius: 4px;
+      cursor: pointer; padding: 0; background: none;
+    }
+    #hex-input {
+      width: 80px; padding: 6px 8px;
+      border: 1px solid #777; border-radius: 4px;
+      background: #333; color: white;
+      font-family: monospace; font-size: 14px;
+      text-align: center;
+    }
     #canvas {
       cursor: crosshair;
       border: 1px solid #ccc;
