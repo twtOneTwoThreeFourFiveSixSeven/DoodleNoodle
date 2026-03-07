@@ -117,6 +117,8 @@ def save_graffiti():
     if len(image) > 2_800_000:
         return jsonify({"error": "Image too large (max ~2MB)"}), 413
 
+    height = data.get("height", 1.5)
+
     doc = {
         "location": {
             "type": "Point",
@@ -125,6 +127,7 @@ def save_graffiti():
         "image": image,
         "scale": int(scale),
         "bearing": float(bearing),
+        "height": float(height),
         "description": data.get("description", "")[:500],
         "author": session.get("user", {}).get("name", "Anonymous"),
         "author_pic": session.get("user", {}).get("picture", ""),
@@ -174,6 +177,7 @@ def get_nearby_graffiti():
             "image": doc["image"],
             "scale": doc.get("scale", 50),
             "bearing": doc.get("bearing", 0),
+            "height": doc.get("height", 1.5),
             "description": doc.get("description", ""),
             "author": doc.get("author", "Anonymous"),
             "likes": len(doc.get("likes", [])),

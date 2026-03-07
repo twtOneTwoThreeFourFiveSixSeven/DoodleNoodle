@@ -238,6 +238,10 @@
     let reticleModel = null;
     let lastHitPose = null;
     let arScaleCm = 50; // default 50cm
+    let xrAnchors = new Map();     // WebXR spatial anchor -> THREE.Mesh
+    let lastHitResult = null;      // XRHitTestResult (for createAnchor)
+    let arStartBearing = 0;        // compass heading when AR started
+    let lastPlacedHeight = 1.5;    // last placed graffiti height (meters from floor)
 
     // Scale slider
     const arScaleSlider = document.getElementById("ar-scale-slider");
@@ -323,9 +327,11 @@
       mesh.position.add(surfaceUp.multiplyScalar(0.002));
 
       mesh.updateMatrix();
+      lastPlacedHeight = position.y; // store for global sharing
 
       scene.add(mesh);
       arStatus.textContent = "✅ Placed on surface at " + arScaleCm + "cm wide! Tap again to place more.";
+      return mesh;
     }
 
     // ===================== HTTPS CHECK =====================
@@ -428,12 +434,15 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.xr.enabled = true;
 
-        // Request AR session with hit-test
+        // Request AR session with hit-test + spatial anchors
         xrSession = await navigator.xr.requestSession("immersive-ar", {
           requiredFeatures: ["hit-test"],
-          optionalFeatures: ["dom-overlay"],
+          optionalFeatures: ["dom-overlay", "anchors"],
           domOverlay: { root: arOverlay }
         });
+
+        // Record compass heading at AR start for GPS offset rotation
+        arStartBearing = userBearing;
 
         arOverlay.style.display = "block";
         document.getElementById("draw-toolbar").style.display = "none";
@@ -446,10 +455,20 @@
         const viewerSpace = await xrSession.requestReferenceSpace("viewer");
         xrHitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
 
-        // Tap to place
-        xrSession.addEventListener("select", () => {
-          if (lastHitPose) {
-            placeDrawingAtHit(lastHitPose);
+        // Tap to place + create spatial anchor
+        xrSession.addEventListener("select", async () => {
+          if (lastHitPose && lastHitResult) {
+            const mesh = placeDrawingAtHit(lastHitPose);
+            // Create a spatial anchor so graffiti stays rock-solid
+            if (lastHitResult.createAnchor) {
+              try {
+                const anchor = await lastHitResult.createAnchor();
+                xrAnchors.set(anchor, mesh);
+                arStatus.textContent = "\u2705 Anchored! Graffiti is locked in place.";
+              } catch (e) {
+                console.warn("Anchor creation failed, using static placement:", e);
+              }
+            }
           }
         });
 
@@ -457,6 +476,11 @@
           arOverlay.style.display = "none";
           document.getElementById("draw-toolbar").style.display = "flex";
           document.getElementById("canvas").style.display = "block";
+          // Release all spatial anchors
+          for (const [anchor] of xrAnchors) {
+            if (anchor.delete) anchor.delete();
+          }
+          xrAnchors.clear();
           xrSession = null;
         });
 
@@ -467,14 +491,24 @@
           const hitResults = frame.getHitTestResults(xrHitTestSource);
           if (hitResults.length > 0) {
             const hit = hitResults[0];
+            lastHitResult = hit;
             lastHitPose = hit.getPose(xrRefSpace);
             reticleModel.visible = true;
             reticleModel.matrix.fromArray(lastHitPose.transform.matrix);
             arStatus.textContent = "Surface detected — tap to place!";
           } else {
             reticleModel.visible = false;
+            lastHitResult = null;
             lastHitPose = null;
             arStatus.textContent = "Scanning for surfaces... point at a wall or floor";
+          }
+
+          // Update anchored meshes — tracked by ARCore for rock-solid placement
+          for (const [anchor, mesh] of xrAnchors) {
+            const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace);
+            if (anchorPose) {
+              mesh.matrix.fromArray(anchorPose.transform.matrix);
+            }
           }
 
           renderer.render(scene, camera);
@@ -723,6 +757,7 @@
         // Position on estimated surface with small offset to avoid z-fighting
         mesh.position.copy(est.position);
         mesh.position.add(est.surfaceNormal.clone().multiplyScalar(0.005));
+        lastPlacedHeight = est.position.y + CAMERA_HEIGHT; // absolute height from floor
 
         if (est.surfaceType === "wall") {
           // Wall: face the drawing outward toward the camera
@@ -872,7 +907,8 @@
             image: imageData,
             scale: arScaleCm,
             bearing: userBearing,
-            description: description
+            description: description,
+            height: lastPlacedHeight
           })
         });
         const result = await resp.json();
@@ -960,21 +996,30 @@
             const mesh = new THREE.Mesh(geo, mat);
             mesh.name = "global_" + item.id;
 
-            // Position by GPS offset: convert lat/lng difference to meters
+            // GPS offset → meters
             const dLat = item.lat - userLat;
             const dLng = item.lng - userLng;
             const metersPerDegLat = 111320;
             const metersPerDegLng = 111320 * Math.cos(userLat * Math.PI / 180);
+            const northMeters = dLat * metersPerDegLat;
+            const eastMeters = dLng * metersPerDegLng;
 
-            const offsetX = dLng * metersPerDegLng; // east-west
-            const offsetZ = -dLat * metersPerDegLat; // north-south (neg = north in Three.js)
+            // Rotate GPS offset into scene coordinates
+            // Fallback AR is compass-aligned (north ≈ -Z); WebXR needs bearing rotation
+            const sceneBearing = (targetScene === fbScene) ? 0 : arStartBearing;
+            const bRad = sceneBearing * Math.PI / 180;
+            const sceneX = eastMeters * Math.cos(bRad) - northMeters * Math.sin(bRad);
+            const sceneZ = -eastMeters * Math.sin(bRad) - northMeters * Math.cos(bRad);
 
-            // Place at 1.5m height (roughly eye level on a wall)
-            mesh.position.set(offsetX, 0, offsetZ);
+            // Height: stored value or default 1.5m
+            let h = item.height != null ? item.height : 1.5;
+            if (targetScene === fbScene) h -= CAMERA_HEIGHT; // fallback camera is at eye level
 
-            // Rotate to face the bearing it was placed at
-            const bearingRad = (item.bearing || 0) * (Math.PI / 180);
-            mesh.rotation.y = bearingRad;
+            mesh.position.set(sceneX, h, sceneZ);
+
+            // Orient graffiti by its bearing, adjusted for scene rotation
+            const itemBearingRad = ((item.bearing || 0) - sceneBearing) * Math.PI / 180;
+            mesh.rotation.y = itemBearingRad;
 
             targetScene.add(mesh);
             loaded++;
