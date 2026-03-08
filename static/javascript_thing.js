@@ -533,6 +533,7 @@ function initWebGL2() {
 
 // ---- CREATE WEBGL TEXTURE FROM IMAGE/CANVAS ----
 function createTexture(source) {
+  if (!gl) return null;
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
@@ -811,6 +812,7 @@ function onXRFrame(time, frame) {
   // Process hit tests
   const mode = document.getElementById("ar-surface-mode")?.value || "auto";
   const forceMode = mode === "auto" ? null : mode;
+  if (!xrHitTestSource) return; // not yet initialized or already cleaned up
   const hitResults = frame.getHitTestResults(xrHitTestSource);
   let hitSurface = "floor";
 
@@ -1068,6 +1070,17 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
 
   } catch (err) {
     console.error(err);
+    // Clean up partial state if session setup failed
+    if (xrSession) {
+      try { xrSession.end(); } catch (e) { /* already ended */ }
+    }
+    arOverlay.style.display = "none";
+    document.getElementById("draw-toolbar").style.display = "flex";
+    document.getElementById("canvas").style.display = "block";
+    xrSession = null;
+    gl = null;
+    glLayer = null;
+    appState = "DRAW";
     alert("AR failed: " + err.message);
   }
 });
@@ -1141,6 +1154,9 @@ async function loadNearbyGraffiti() {
     if (!resp.ok) return;
     const items = await resp.json();
 
+    // Re-check — session may have ended during the network request
+    if (!gl) return;
+
     const mLat = 111320;
     const mLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
     const bRad = arStartBearing * Math.PI / 180;
@@ -1155,6 +1171,9 @@ async function loadNearbyGraffiti() {
       img.src = item.image;
       try { await new Promise((ok, fail) => { img.onload = ok; img.onerror = fail; }); }
       catch (e) { continue; }
+
+      // Session may have ended while loading images
+      if (!gl) return;
 
       const tex = createTexture(img);
       const aspect = img.width / img.height;
