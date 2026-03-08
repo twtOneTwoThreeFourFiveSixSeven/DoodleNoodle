@@ -35,6 +35,22 @@ let drawing = false, erasing = false, brushSize = 4;
 let currentColor = "#000000";
 let appState = "DRAW"; // States: DRAW, IMAGE_PLACE, AR
 let placingImage = null; // image being positioned before commit
+let previewEnabled = true;
+// ===================== PREVIEW TOGGLE =====================
+const previewToggleBtn = document.getElementById("preview-toggle-btn");
+if (previewToggleBtn) {
+  previewToggleBtn.addEventListener("click", () => {
+    previewEnabled = !previewEnabled;
+    previewToggleBtn.textContent = previewEnabled ? "👁️ Preview On" : "🙈 Preview Off";
+    if (!previewEnabled && placingImage) {
+      // Remove preview overlay
+      if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
+    } else if (previewEnabled && placingImage) {
+      drawRotatedPreview();
+    }
+  });
+  previewToggleBtn.textContent = previewEnabled ? "👁️ Preview On" : "🙈 Preview Off";
+}
 
 function getPos(e) {
   const rect = canvas.getBoundingClientRect();
@@ -248,7 +264,7 @@ if (placeCancelBtn) {
 // function renderPlacingImage() no longer needed, replaced by declarative UI toggle
 
 function drawRotatedPreview() {
-  if (!placingImage) return;
+  if (!placingImage || !previewEnabled) return;
   const { img, x, y, w, h, rotation } = placingImage;
   const cx = x + w / 2;
   const cy = y + h / 2;
@@ -262,7 +278,7 @@ function drawRotatedPreview() {
 }
 
 function drawPreview() {
-  if (!placingImage) return;
+  if (!placingImage || !previewEnabled) return;
   const saved = ctx.getImageData(0, 0, canvas.width, canvas.height);
   ctx.putImageData(saved, 0, 0);
   placingImage.savedData = saved;
@@ -326,9 +342,25 @@ window.addEventListener("resize", () => {
 });
 
 // ===================== AR MODE (WebXR + raw WebGL2) =====================
+const arExitBtn = document.getElementById("ar-exit-btn");
+if (arExitBtn) {
+  arExitBtn.addEventListener("click", () => {
+    if (xrSession) xrSession.end();
+  });
+}
 const arOverlay = document.getElementById("ar-overlay");
 const arStatus = document.getElementById("ar-status");
 const reticle = document.getElementById("reticle");
+let arPreviewEnabled = true;
+const arPreviewToggleBtn = document.getElementById("ar-preview-toggle-btn");
+if (arPreviewToggleBtn) {
+  arPreviewToggleBtn.addEventListener("click", () => {
+    arPreviewEnabled = !arPreviewEnabled;
+    arPreviewToggleBtn.textContent = arPreviewEnabled ? "👁️ Preview On" : "🙈 Preview Off";
+    // Optionally trigger AR preview redraw here
+  });
+  arPreviewToggleBtn.textContent = arPreviewEnabled ? "👁️ Preview On" : "🙈 Preview Off";
+}
 
 let xrSession = null;
 let xrRefSpace = null;
@@ -790,7 +822,7 @@ function onXRFrame(time, frame) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
     }
 
-    arStatus.textContent = "[" + hitSurface.toUpperCase() + (forceMode ? " OVERRIDE" : "") + "] - tap to place!";
+    arStatus.textContent = "[" + hitSurface.toUpperCase() + (forceMode ? " OVERRIDE" : "") + "] - use the ⬇️ button to place!";
   } else {
     lastHitPose = null;
     lastHitFrame = null;
@@ -828,7 +860,7 @@ function onXRFrame(time, frame) {
     }
 
     // Draw preview (semi-transparent)
-    if (previewMatrix && previewTexture) {
+    if (arPreviewEnabled && previewMatrix && previewTexture) {
       gl.uniform1i(uMode, 0);
       gl.uniformMatrix4fv(uModel, false, previewMatrix);
       gl.uniform1f(uOpacity, 0.45);
@@ -909,12 +941,25 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     loadNearbyGraffiti();
     nearbyInterval = setInterval(loadNearbyGraffiti, 8000);
 
-    xrSession.addEventListener("select", (ev) => {
-      if (lastHitPose) {
-        // Pass the frame from the select event for anchor creation
-        placeDrawingAtHit(lastHitPose, ev.frame || lastHitFrame);
-      }
-    });
+    // Only allow placement via the button
+    const putdownBtn = document.getElementById("ar-putdown-btn");
+    if (putdownBtn) {
+      putdownBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (lastHitPose && lastHitFrame) {
+          placeDrawingAtHit(lastHitPose, lastHitFrame);
+        } else {
+          alert("No surface detected. Try again.");
+        }
+      });
+    }
+
+    // Prevent AR overlay from triggering placement on pointer/touch events
+    if (arOverlay) {
+      arOverlay.addEventListener("pointerdown", (e) => e.stopPropagation());
+      arOverlay.addEventListener("touchstart", (e) => e.stopPropagation());
+      arOverlay.addEventListener("click", (e) => e.stopPropagation());
+    }
 
     // Wire up undo button
     const undoBtn = document.getElementById("ar-undo-btn");
