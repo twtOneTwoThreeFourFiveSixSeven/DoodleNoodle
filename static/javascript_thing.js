@@ -249,8 +249,8 @@ function renderPlacingImage() {
     placeOverlay.addEventListener("mousedown", startDragImage);
     placeOverlay.addEventListener("mousemove", dragImage);
     placeOverlay.addEventListener("mouseup", stopDragImage);
-    placeOverlay.addEventListener("touchstart", startDragImage);
-    placeOverlay.addEventListener("touchmove", dragImage);
+    placeOverlay.addEventListener("touchstart", startDragImage, { passive: false });
+    placeOverlay.addEventListener("touchmove", dragImage, { passive: false });
     placeOverlay.addEventListener("touchend", stopDragImage);
     placeOverlay.addEventListener("wheel", resizeImage);
   }
@@ -515,7 +515,9 @@ function placeDrawingAtHit(pose) {
   const material = new THREE.MeshBasicMaterial({
     map: drawingTexture,
     transparent: true,
-    side: THREE.DoubleSide
+    side: THREE.DoubleSide,
+    depthTest: true,
+    depthWrite: false
   });
 
   const mesh = new THREE.Mesh(geometry, material);
@@ -538,8 +540,8 @@ function placeDrawingAtHit(pose) {
   let surfaceType = "floor";
 
   if (mode === "auto") {
-    isWall = Math.abs(surfaceNormal.y) < 0.7;
-    isCeiling = !isWall && surfaceNormal.y < -0.7;
+    isWall = Math.abs(surfaceNormal.y) < 0.707;
+    isCeiling = !isWall && surfaceNormal.y < -0.707;
     surfaceType = isWall ? "wall" : (isCeiling ? "ceiling" : "floor");
   } else if (mode === "wall") {
     isWall = true;
@@ -773,7 +775,7 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
         const hitPos = new THREE.Vector3(lastHitPose.transform.position.x, lastHitPose.transform.position.y, lastHitPose.transform.position.z);
 
         if (mode === "auto") {
-          hitSurface = Math.abs(hitNormal.y) < 0.5 ? "wall" : (hitNormal.y < -0.5 ? "ceiling" : "floor");
+          hitSurface = Math.abs(hitNormal.y) < 0.707 ? "wall" : (hitNormal.y < -0.707 ? "ceiling" : "floor");
           reticleModel.matrix.fromArray(lastHitPose.transform.matrix);
         } else if (mode === "wall") {
           hitSurface = "wall";
@@ -944,7 +946,7 @@ async function loadNearbyGraffiti() {
 
       const mesh = new THREE.Mesh(
         new THREE.PlaneGeometry(planeWidth, planeHeight),
-        new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: true })
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: true, depthWrite: false })
       );
       mesh.name = "global_" + id;
 
@@ -956,7 +958,7 @@ async function loadNearbyGraffiti() {
       const nM = (item.lat - arStartLat) * mLat;    // metres northward
       const eM = (item.lng - arStartLng) * mLng;    // metres eastward
       // Viewer XR frame: +X = right (bearing+90), -Z = forward (bearing)
-      const sX =  eM * Math.cos(bRad) - nM * Math.sin(bRad);
+      const sX = eM * Math.cos(bRad) - nM * Math.sin(bRad);
       const sZ = -eM * Math.sin(bRad) - nM * Math.cos(bRad);
       mesh.position.set(sX, height || 1.5, sZ);
 
