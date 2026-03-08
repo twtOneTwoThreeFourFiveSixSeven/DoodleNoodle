@@ -1064,24 +1064,27 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     nearbyInterval = setInterval(loadNearbyGraffiti, 8000);
 
     // Wire up undo button (added per-session is fine; session end cleans up the overlay)
+    // Change this in your AR initialization block:
     const undoBtn = document.getElementById("ar-undo-btn");
-    if (undoBtn) undoBtn.addEventListener("click", (e) => { e.stopPropagation(); undoLastPiece(); });
+    if (undoBtn) {
+      undoBtn.onclick = (e) => {
+        e.stopPropagation();
+        undoLastPiece();
+      };
+    }
 
     xrSession.addEventListener("end", () => {
       try {
         clearInterval(nearbyInterval);
         nearbyInterval = null;
 
-        // 1. CRITICAL: Cancel the pending animation frame!
-        // Make sure to replace 'xrFrameId' with whatever variable you used 
-        // to store the result of xrSession.requestAnimationFrame()
-        if (xrFrameId) {
-          xrSession.cancelAnimationFrame(xrFrameId);
+        // 1. CRITICAL: Cancel the pending animation frame safely
+        if (xrFrameId && xrSession) {
+          try { xrSession.cancelAnimationFrame(xrFrameId); } catch (e) { }
           xrFrameId = null;
         }
 
         // Clean up WebGL textures
-        // (Note: You don't need to manually delete anchors here; WebXR destroys them automatically on end)
         for (const piece of placedPieces) {
           if (piece.texture && gl) try { gl.deleteTexture(piece.texture); } catch (e) { }
         }
@@ -1090,7 +1093,15 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
         // Empty the ghost array
         placedPieces.length = 0;
 
-        // REMOVED the WEBGL_lose_context block. Let the browser manage this naturally.
+        // 2. RESTORE THE GPU KILL SWITCH
+        // Because you generate a new <canvas> every time AR starts, you MUST 
+        // manually kill the old WebGL context to prevent a VRAM out-of-memory crash.
+        if (gl) {
+          try {
+            const ext = gl.getExtension('WEBGL_lose_context');
+            if (ext) ext.loseContext();
+          } catch (e) { console.error("Error losing context:", e); }
+        }
 
         // Update UI
         arOverlay.style.display = "none";

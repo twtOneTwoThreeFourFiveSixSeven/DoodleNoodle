@@ -57,10 +57,11 @@
 
   <!-- AR overlay -->
   <div id="ar-overlay">
-      <button id="ar-putdown-btn" style="position:fixed;bottom:80px;right:32px;width:56px;height:56px;border-radius:50%;background:#27ae60;color:white;font-size:28px;box-shadow:0 2px 8px rgba(0,0,0,0.12);border:none;display:flex;align-items:center;justify-content:center;z-index:201;">⬇️</button>
+    <button id="ar-putdown-btn"
+      style="position:fixed;bottom:80px;right:32px;width:56px;height:56px;border-radius:50%;background:#27ae60;color:white;font-size:28px;box-shadow:0 2px 8px rgba(0,0,0,0.12);border:none;display:flex;align-items:center;justify-content:center;z-index:201;">⬇️</button>
     <div id="ar-version"
       style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.5);color:#0f0;padding:2px 6px;border-radius:3px;font-size:9px;font-family:monospace;z-index:100;">
-      v3.0</div>
+      v4.0</div>
     <div id="ar-status">Point at a wall and tap to place your drawing</div>
     <div class="reticle-hint" id="reticle"></div>
 
@@ -85,12 +86,17 @@
         <button id="ar-undo-btn">↩ Undo</button>
       </div>
       <div id="ar-anchor-count"
-        style="color:#0f0;font-size:10px;font-family:monospace;text-shadow:0 0 4px black;text-align:center;margin:2px 0;"></div>
+        style="color:#0f0;font-size:10px;font-family:monospace;text-shadow:0 0 4px black;text-align:center;margin:2px 0;">
+      </div>
       <div id="ar-gps-status"></div>
     </div>
-    <button id="ar-exit-btn" class="btn-sm" style="position:fixed;bottom:24px;left:24px;color:black;padding:12px 22px;font-size:16px;border-radius:10px;background:white;box-shadow:0 2px 8px rgba(0,0,0,0.12);font-weight:bold;z-index:201;">← Back to Draw</button>
-    <button id="ar-preview-toggle-btn" class="btn-sm" style="position:fixed;bottom:24px;right:24px;padding:12px 22px;font-size:16px;border-radius:10px;background:#444;color:white;box-shadow:0 2px 8px rgba(0,0,0,0.12);font-weight:bold;z-index:201;">👁️ Preview On/Off</button>
-    </div>
+    <button id="ar-exit-btn" class="btn-sm"
+      style="position:fixed;bottom:24px;left:24px;color:black;padding:12px 22px;font-size:16px;border-radius:10px;background:white;box-shadow:0 2px 8px rgba(0,0,0,0.12);font-weight:bold;z-index:201;">←
+      Back to Draw</button>
+    <button id="ar-preview-toggle-btn" class="btn-sm"
+      style="position:fixed;bottom:24px;right:24px;padding:12px 22px;font-size:16px;border-radius:10px;background:#444;color:white;box-shadow:0 2px 8px rgba(0,0,0,0.12);font-weight:bold;z-index:201;">👁️
+      Preview On/Off</button>
+  </div>
 
   </div>
 
