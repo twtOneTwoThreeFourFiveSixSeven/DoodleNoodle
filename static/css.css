@@ -111,33 +111,37 @@ body {
 
 #ar-overlay button {
   position: absolute;
-  bottom: 30px;
-  padding: 14px 28px;
+  bottom: 20px;
+  padding: 8px 16px;
   border: none;
-  border-radius: 10px;
-  font-size: 16px;
+  border-radius: 8px;
+  font-size: 13px;
   font-weight: bold;
   cursor: pointer;
   z-index: 101;
+  min-height: 36px;
 }
 
 #ar-exit-btn {
-  left: 20px;
+  left: 10px;
   background: rgba(255, 255, 255, 0.9);
   z-index: 200;
   pointer-events: auto;
+  font-size: 12px;
+  padding: 6px 12px;
 }
 
 #ar-status {
   position: absolute;
-  top: 20px;
+  top: 14px;
   left: 0;
   right: 0;
   text-align: center;
   color: white;
-  font-size: 18px;
-  text-shadow: 0 0 8px black;
+  font-size: 13px;
+  text-shadow: 0 0 6px black;
   z-index: 101;
+  padding: 0 10px;
 }
 
 .reticle-hint {
@@ -157,14 +161,14 @@ body {
 
 #ar-top-controls {
   position: absolute;
-  top: 60px;
+  top: 38px;
   left: 0;
   width: 100%;
-  padding: 0 15px;
+  padding: 0 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   z-index: 200;
   pointer-events: auto;
   touch-action: auto;
@@ -280,9 +284,9 @@ body {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
-  max-width: 500px;
+  max-width: 360px;
   z-index: 201;
   pointer-events: auto;
   touch-action: auto;
@@ -290,12 +294,13 @@ body {
 
 #ar-action-bar button {
   position: static;
-  padding: 10px 18px;
+  padding: 6px 12px;
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 6px;
+  font-size: 12px;
   font-weight: bold;
   cursor: pointer;
+  min-height: 36px;
 }
 
 #ar-share-btn {
@@ -310,14 +315,14 @@ body {
 
 #ar-gps-status {
   position: relative;
-  top: 44px;
+  top: 0;
   left: 0;
   right: 0;
   text-align: center;
   background: none;
   color: #ffd700;
-  font-size: 12px;
-  padding: 4px 8px;
+  font-size: 11px;
+  padding: 2px 6px;
   z-index: 101;
   pointer-events: none;
   text-shadow: 0 0 6px black;
@@ -509,14 +514,15 @@ body {
 /* ===================== DESCRIPTION INPUT (AR overlay) ===================== */
 #ar-description {
   flex: 1;
-  min-width: 180px;
-  padding: 10px 14px;
+  min-width: 140px;
+  padding: 6px 10px;
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 6px;
+  font-size: 12px;
   background: rgba(255, 255, 255, 0.95);
   color: #222;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  min-height: 36px;
 }
 
 #ar-description::placeholder {

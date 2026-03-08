@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Dashboard – DoodleNoodle</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{
+      width:100%;height:100%;
+      font-family:'Comic Sans MS','Comic Sans',cursive;
+      background:#c8a87a url("{{ url_for('static',filename='assets/white-crumpled-paper-texture-background.png') }}") center/cover no-repeat fixed;
+    }
+    body::before{
+      content:'';position:fixed;inset:0;
+      background:rgba(195,165,120,0.55);
+      pointer-events:none;z-index:0;
+    }
+
+    .page{
+      position:relative;z-index:1;
+      min-height:100vh;
+      display:flex;flex-direction:column;
+      padding:0 0 80px;
+    }
+
+    /* ---- Top bar ---- */
+    .top-bar{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:10px 16px 0;
+    }
+    .top-label{
+      font-size:13px;color:rgba(90,70,45,0.5);
+      position:absolute;top:6px;left:12px;
+    }
+    .logo-sm{
+      width:90px;height:auto;
+      margin-top:18px;
+    }
+    .avatar{
+      width:40px;height:40px;
+      border-radius:50%;
+      background:#222;
+      margin-top:18px;
+      overflow:hidden;
+    }
+    .avatar img{width:100%;height:100%;object-fit:cover;}
+    /* Default silhouette when no picture */
+    .avatar-placeholder{
+      width:100%;height:100%;
+      display:flex;align-items:center;justify-content:center;
+      background:#222;color:#fff;font-size:22px;
+    }
+
+    /* ---- Quick action buttons ---- */
+    .quick-actions{
+      display:flex;gap:12px;
+      padding:14px 16px 0;
+    }
+    .btn-new{
+      flex:1;padding:12px 0;
+      border:none;border-radius:8px;
+      font-size:0.95rem;font-weight:700;
+      font-family:'Comic Sans MS','Comic Sans',cursive;
+      cursor:pointer;
+      background:linear-gradient(180deg,#f5a623 0%,#ec8c1a 100%);
+      color:#fff;
+      box-shadow:0 2px 8px rgba(0,0,0,0.15);
+      text-decoration:none;text-align:center;display:block;
+    }
+    .btn-view{
+      flex:1;padding:12px 0;
+      border:none;border-radius:8px;
+      font-size:0.95rem;font-weight:700;
+      font-family:'Comic Sans MS','Comic Sans',cursive;
+      cursor:pointer;
+      background:#f5e042;
+      color:#222;
+      box-shadow:0 2px 8px rgba(0,0,0,0.12);
+      text-decoration:none;text-align:center;display:block;
+    }
+
+    /* ---- Drawings panel ---- */
+    .drawings-panel{
+      margin:16px 12px 0;
+      background:rgba(255,250,240,0.88);
+      border-radius:14px;
+      padding:18px 16px 12px;
+      flex:1;
+      box-shadow:0 2px 10px rgba(0,0,0,0.08);
+    }
+    .drawings-panel h2{
+      font-size:1.3rem;
+      font-weight:700;
+      color:#222;
+      margin-bottom:14px;
+    }
+
+    /* ---- Drawing list ---- */
+    .drawing-list{
+      display:flex;flex-direction:column;
+      gap:12px;
+    }
+    .drawing-item{
+      display:flex;align-items:center;gap:12px;
+      text-decoration:none;color:#222;
+    }
+    .drawing-thumb{
+      width:64px;height:64px;
+      border:2px solid #222;
+      border-radius:6px;
+      background:#fff;
+      object-fit:cover;
+      flex-shrink:0;
+    }
+    .drawing-info{
+      display:flex;flex-direction:column;
+      gap:2px;
+    }
+    .drawing-title{
+      font-size:0.95rem;font-weight:700;
+    }
+    .drawing-meta{
+      font-size:0.8rem;color:#666;
+    }
+
+    /* Small brown bullet decorations on left edge */
+    .drawing-item::before{
+      content:'';
+      width:8px;height:8px;
+      background:#a08050;
+      border-radius:50%;
+      flex-shrink:0;
+    }
+
+    /* ---- Empty state ---- */
+    .empty-state{
+      text-align:center;
+      color:#888;
+      padding:40px 0;
+      font-size:1rem;
+    }
+
+    /* ---- Bottom tab bar ---- */
+    .tab-bar{
+      position:fixed;bottom:0;left:0;right:0;
+      display:flex;gap:12px;
+      padding:12px 16px;
+      background:rgba(180,150,110,0.95);
+      z-index:10;
+    }
+    .tab{
+      flex:1;padding:10px 0;
+      border:none;border-radius:8px;
+      font-size:0.9rem;font-weight:700;
+      font-family:'Comic Sans MS','Comic Sans',cursive;
+      cursor:pointer;text-decoration:none;
+      text-align:center;display:block;
+    }
+    .tab-active{
+      background:#5cd6c8;color:#fff;
+    }
+    .tab-inactive{
+      background:#5cd6c8;color:#fff;
+    }
+  </style>
+</head>
+<body>
+
+<div class="page">
+  <div class="top-label">Dashboard</div>
+
+  <!-- Top bar: logo + avatar -->
+  <div class="top-bar">
+    <img class="logo-sm" src="{{ url_for('static',filename='assets/Untitled_3.png') }}" alt="DoodleNoodle">
+    <div class="avatar">
+      {% if user and user.picture %}
+        <img src="{{ user.picture }}" alt="">
+      {% else %}
+        <div class="avatar-placeholder">&#9679;</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Quick action buttons -->
+  <div class="quick-actions">
+    <a href="{{ url_for('create_post') }}" class="btn-new">new drawing</a>
+    <a href="{{ url_for('app_page') }}" class="btn-view">view area</a>
+  </div>
+
+  <!-- My drawings list -->
+  <div class="drawings-panel">
+    <h2>my drawings</h2>
+
+    {% if drawings %}
+      <div class="drawing-list">
+        {% for d in drawings %}
+          <a class="drawing-item" href="{{ url_for('graffiti_detail', graffiti_id=d.id) }}">
+            <img class="drawing-thumb" src="{{ d.image }}" alt="">
+            <div class="drawing-info">
+              <span class="drawing-title">{{ d.description or 'Untitled' }}</span>
+              <span class="drawing-meta">(location)</span>
+              <span class="drawing-meta">{{ d.created.strftime('%b %d, %Y') if d.created else '' }}</span>
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">No drawings yet — go make some!</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Bottom tab bar -->
+<div class="tab-bar">
+  <a href="{{ url_for('dashboard') }}" class="tab tab-active">my drawings</a>
+  <a href="{{ url_for('app_page') }}" class="tab tab-inactive">community</a>
+</div>
+
+</body>
+</html>

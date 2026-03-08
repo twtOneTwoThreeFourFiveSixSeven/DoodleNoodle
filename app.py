@@ -54,9 +54,19 @@ else:
     print("⚠️  No MONGODB_URI set in .env — global graffiti disabled.")
 
 
+@app.after_request
+def no_cache(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 @app.route("/")
 def home():
-    return render_template("home.html", user=session.get("user"))
+    if session.get("user"):
+        return redirect(url_for("dashboard"))
+    return render_template("home.html", user=None)
 
 
 @app.route("/login")
@@ -72,7 +82,7 @@ def login():
 def callback():
     token = oauth.auth0.authorize_access_token()
     session["user"] = token.get("userinfo")
-    return redirect(url_for("app_page"))
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/logout")
@@ -101,6 +111,27 @@ def create_post():
     if not user:
         return redirect(url_for("login"))
     return render_template("create-post.html", user=user)
+
+
+@app.route("/dashboard")
+def dashboard():
+    user = session.get("user")
+    if not user:
+        return redirect(url_for("login"))
+    drawings = []
+    if graffiti_col is not None:
+        cursor = graffiti_col.find(
+            {"author": user.get("name", "")}
+        ).sort("created", -1)
+        for doc in cursor:
+            drawings.append({
+                "id": str(doc["_id"]),
+                "image": doc.get("image", ""),
+                "description": doc.get("description", "Untitled"),
+                "location": doc.get("description", ""),
+                "created": doc.get("created", ""),
+            })
+    return render_template("dashboard.html", user=user, drawings=drawings)
 
 
 @app.route("/api/graffiti", methods=["POST"])
@@ -274,4 +305,4 @@ def add_comment(graffiti_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5500)
+    app.run(debug=True, port=5501)
