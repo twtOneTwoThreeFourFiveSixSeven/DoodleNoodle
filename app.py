@@ -112,9 +112,7 @@ def dashboard():
         return redirect(url_for("login"))
     drawings = []
     if graffiti_col is not None:
-        cursor = graffiti_col.find(
-            {"author": user.get("name", "")}
-        ).sort("created", -1)
+        cursor = graffiti_col.find().sort("created", -1)
         for doc in cursor:
             drawings.append({
                 "id": str(doc["_id"]),
