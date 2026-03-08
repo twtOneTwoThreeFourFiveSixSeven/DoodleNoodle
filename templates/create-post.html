@@ -4,262 +4,61 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>New Drawing — DoodleNoodle</title>
-  <style>
-    *{margin:0;padding:0;box-sizing:border-box;}
-    html,body{
-      width:100%;height:100%;overflow:hidden;
-      font-family:'Comic Sans MS','Comic Sans',cursive;
-      background:#c8a87a url("{{ url_for('static',filename='assets/white-crumpled-paper-texture-background.png') }}") center/cover no-repeat;
-    }
-    body::before{
-      content:'';position:fixed;inset:0;
-      background:rgba(195,165,120,0.55);
-      pointer-events:none;z-index:0;
-    }
-    .page{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;}
-
-    .page-label{
-      position:absolute;top:4px;left:10px;
-      font-size:12px;color:rgba(90,70,45,0.45);
-    }
-
-    /* ---- Header bar ---- */
-    .header-bar{
-      display:flex;align-items:center;justify-content:space-between;
-      padding:26px 14px 10px;
-      background:linear-gradient(180deg,rgba(160,120,70,0.7) 0%,rgba(160,120,70,0.5) 100%);
-      border-radius:0 0 10px 10px;
-    }
-    .header-bar .back-btn,
-    .header-bar .done-btn{
-      background:none;border:none;
-      font-size:1.6rem;cursor:pointer;color:#222;
-      padding:4px 8px;
-    }
-    .header-bar h1{
-      font-size:1.1rem;font-weight:700;
-      color:#222;font-style:italic;
-    }
-
-    /* ---- Toolbar ---- */
-    .tool-strip{
-      display:flex;gap:6px;
-      padding:8px 14px;
-      background:linear-gradient(180deg,rgba(140,105,60,0.65) 0%,rgba(140,105,60,0.45) 100%);
-      border-radius:8px;
-      margin:0 14px;
-    }
-    .tool-btn{
-      flex:1;
-      aspect-ratio:1;
-      border:2px solid rgba(100,70,30,0.3);
-      border-radius:8px;
-      background:rgba(255,250,240,0.85);
-      display:flex;align-items:center;justify-content:center;
-      cursor:pointer;
-      font-size:1.4rem;
-      color:#222;
-      position:relative;
-    }
-    .tool-btn:active{background:rgba(255,240,210,1);}
-    .tool-btn.active{border-color:#f5a623;background:rgba(255,240,210,1);}
-
-    /* ---- Dropdown menus ---- */
-    .dropdown{
-      display:none;
-      position:absolute;top:110%;left:50%;transform:translateX(-50%);
-      background:#fff;border:2px solid #b89050;border-radius:8px;
-      box-shadow:0 4px 14px rgba(0,0,0,0.2);
-      z-index:20;min-width:140px;
-      overflow:hidden;
-    }
-    .dropdown.open{display:block;}
-    .dropdown-item{
-      padding:10px 14px;font-size:0.85rem;
-      cursor:pointer;border-bottom:1px solid #eee;
-      display:flex;align-items:center;gap:8px;
-      font-family:'Comic Sans MS','Comic Sans',cursive;
-      white-space:nowrap;
-    }
-    .dropdown-item:last-child{border-bottom:none;}
-    .dropdown-item:hover{background:#fdf5e6;}
-    .dropdown-item.sel{background:#fff3d0;font-weight:700;}
-
-    /* Brush size sub-row */
-    .brush-size-row{
-      padding:8px 14px;display:flex;align-items:center;gap:6px;
-      border-top:1px solid #eee;
-    }
-    .brush-size-row input[type=range]{flex:1;accent-color:#f5a623;}
-    .brush-size-row span{font-size:0.8rem;min-width:22px;text-align:right;}
-
-    /* Color picker hidden input + swatch */
-    .color-swatch{
-      width:26px;height:26px;border-radius:50%;
-      border:2px solid #222;cursor:pointer;
-    }
-    input[type=color]{
-      position:absolute;opacity:0;width:0;height:0;pointer-events:none;
-    }
-
-    /* ---- Canvas area ---- */
-    .canvas-wrap{
-      flex:1;margin:10px 14px 14px;
-      border-radius:12px;overflow:hidden;
-      background:rgba(255,250,240,0.9);
-      box-shadow:inset 0 2px 8px rgba(0,0,0,0.08);
-      position:relative;
-    }
-    #canvas{
-      display:block;width:100%;height:100%;
-      touch-action:none;
-      cursor:crosshair;
-    }
-
-    /* ---- Place overlay (image placement) ---- */
-    #place-overlay{
-      display:none;position:fixed;inset:0;z-index:30;
-      background:rgba(0,0,0,0.3);
-      touch-action:none;
-    }
-    #place-controls-bar{
-      position:absolute;bottom:80px;left:50%;transform:translateX(-50%);
-      background:rgba(0,0,0,0.7);border-radius:8px;padding:8px 14px;
-      display:flex;flex-direction:column;gap:6px;
-    }
-    .place-ctrl-label{color:#fff;font-size:0.8rem;display:flex;align-items:center;gap:6px;}
-    .place-input-range{flex:1;accent-color:#f5a623;}
-    .place-ctrl-val{min-width:36px;text-align:right;font-size:0.8rem;color:#fff;}
-    .place-btn{
-      position:absolute;bottom:20px;padding:10px 20px;
-      border:none;border-radius:8px;font-size:1rem;font-weight:700;
-      font-family:'Comic Sans MS','Comic Sans',cursive;cursor:pointer;
-    }
-    #place-stamp-btn{right:50%;margin-right:6px;background:#4caf50;color:#fff;}
-    #place-cancel-btn{left:50%;margin-left:6px;background:#e53935;color:#fff;}
-
-    /* ---- Post panel ---- */
-    #post-panel{
-      display:none;position:fixed;inset:0;z-index:40;
-      background:rgba(0,0,0,0.5);
-      align-items:center;justify-content:center;
-    }
-    #post-panel.open{display:flex;}
-    .post-card{
-      background:#fff;border-radius:14px;padding:24px 20px;
-      width:88%;max-width:340px;
-      box-shadow:0 6px 24px rgba(0,0,0,0.25);
-    }
-    .post-card h2{font-size:1.1rem;margin-bottom:12px;}
-    .post-card input,.post-card textarea{
-      width:100%;padding:10px;border:2px solid #ddd;border-radius:8px;
-      font-family:'Comic Sans MS','Comic Sans',cursive;
-      font-size:0.9rem;margin-bottom:10px;resize:none;
-    }
-    .post-card textarea{height:80px;}
-    .post-panel-actions{display:flex;gap:10px;}
-    .post-panel-actions button{
-      flex:1;padding:10px;border:none;border-radius:8px;
-      font-size:0.95rem;font-weight:700;cursor:pointer;
-      font-family:'Comic Sans MS','Comic Sans',cursive;
-    }
-    #post-submit-btn{background:#f5a623;color:#fff;}
-    #post-cancel-btn{background:#eee;color:#222;}
-
-    /* Crosshair */
-    #crosshair{display:none;}
-  </style>
+  <title>Create Post — GoGoGraffiti</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css.css') }}">
 </head>
 
 <body>
 
-<div class="page">
-  <div class="page-label">New Drawing Page</div>
-
-  <!-- Header -->
-  <div class="header-bar">
-    <button class="back-btn" id="back-btn">&#x2190;</button>
-    <h1>new drawing</h1>
-    <button class="done-btn" id="done-btn">&#x2714;</button>
+  <!-- Drawing toolbar -->
+  <div class="toolbar" id="draw-toolbar">
+    <div class="user-bar">
+      {% if user and user.picture %}
+      <img src="{{ user.picture }}" alt="" class="user-avatar">
+      {% endif %}
+      <span class="user-name">{{ user.name or user.email or 'Guest' }}</span>
+      <a href="{{ url_for('logout') }}" class="toolbar-link">Logout</a>
+      <a href="{{ url_for('home') }}" class="toolbar-link">Home</a>
+    </div>
+    <button id="pen-btn" class="active">✏️ Pen</button>
+    <button id="eraser-btn">🧹 Eraser</button>
+    <label>Size: <input type="range" id="size-slider" min="1" max="50" value="4"></label>
+    <span id="size-label" style="color:white;">4</span>
+    <input type="color" id="color-picker" value="#000000" title="Pick a color">
+    <input type="text" id="hex-input" value="#000000" maxlength="7" placeholder="#000000">
+    <button id="img-btn">🖼️ Image</button>
+    <input type="file" id="img-upload" accept="image/png,image/jpeg" style="display:none;">
+    <button id="clear-btn">🗑️ Clear</button>
+    <button id="save-btn">💾 Save</button>
+    <button id="post-open-btn">🚀 Post</button>
   </div>
 
-  <!-- Toolbar: 4 icon buttons -->
-  <div class="tool-strip">
-
-    <!-- 1) Pen dropdown: Paint / Erase / Brush size -->
-    <div class="tool-btn" id="pen-tool" style="overflow:visible;">
-      &#9998;
-      <div class="dropdown" id="pen-dropdown">
-        <div class="dropdown-item sel" data-mode="paint">&#9998; Paint</div>
-        <div class="dropdown-item" data-mode="erase">&#128465; Erase</div>
-        <div class="brush-size-row">
-          <span>Size</span>
-          <input type="range" id="size-slider" min="1" max="50" value="4">
-          <span id="size-label">4</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 2) Colour chooser -->
-    <div class="tool-btn" id="color-tool">
-      <div class="color-swatch" id="color-swatch" style="background:#000000;"></div>
-      <input type="color" id="color-picker" value="#000000">
-    </div>
-
-    <!-- 3) Upload image -->
-    <div class="tool-btn" id="upload-tool">
-      &#8679;
-      <input type="file" id="img-upload" accept="image/png,image/jpeg" style="display:none;">
-    </div>
-
-    <!-- 4) Clear canvas -->
-    <div class="tool-btn" id="clear-tool">
-      &#8635;
-    </div>
+  <canvas id="canvas"></canvas>
+  <div id="crosshair">
+    <div class="crosshair-h"></div>
+    <div class="crosshair-v"></div>
   </div>
 
-  <!-- Canvas -->
-  <div class="canvas-wrap">
-    <canvas id="canvas"></canvas>
-  </div>
-</div>
-
-<!-- Image placement overlay -->
-<div id="place-overlay">
-  <div id="place-controls-bar">
-    <label class="place-ctrl-label">
-      Scale: <input type="range" id="place-scale-slider" class="place-input-range" min="10" max="400" value="100">
-      <span id="place-scale-label" class="place-ctrl-val">100%</span>
-    </label>
-    <label class="place-ctrl-label">
-      Rotate: <input type="range" id="place-rotate-slider" class="place-input-range" min="0" max="360" value="0">
-      <span id="place-rotate-label" class="place-ctrl-val">0°</span>
-    </label>
-  </div>
-  <button id="place-stamp-btn" class="place-btn">&#x2705; Stamp</button>
-  <button id="place-cancel-btn" class="place-btn">&#x274C; Cancel</button>
-</div>
-
-<!-- Post / share panel -->
-<div id="post-panel">
-  <div class="post-card">
+  <!-- Post panel -->
+  <div id="post-panel">
     <h2>Share Your Piece</h2>
     <input type="text" id="post-title" placeholder="Title..." maxlength="100">
     <textarea id="post-description" placeholder="Describe your graffiti..." maxlength="500"></textarea>
     <div class="post-panel-actions">
-      <button id="post-submit-btn">&#128640; Post</button>
+      <button id="post-submit-btn">🚀 Post</button>
       <button id="post-cancel-btn">Cancel</button>
     </div>
   </div>
-</div>
 
-<!-- Hidden elements that javascript_thing.js expects -->
-<div style="display:none;">
-  <div id="ar-overlay">
+  <!-- Hidden AR elements required by javascript_thing.js -->
+  <div id="ar-overlay" style="display:none;">
     <div id="ar-status"></div>
     <div id="reticle"></div>
-    <select id="ar-surface-mode"><option value="auto">Auto</option></select>
+    <select id="ar-surface-mode">
+      <option value="auto">Auto</option>
+      <option value="wall">Wall</option>
+      <option value="floor">Floor</option>
+    </select>
     <input type="range" id="ar-scale-slider" min="10" max="300" value="50">
     <span id="ar-scale-label">50cm</span>
     <input type="range" id="ar-rotate-slider" min="-180" max="180" value="0">
@@ -271,98 +70,27 @@
     <button id="ar-exit-btn"></button>
     <div id="debug-info"></div>
   </div>
-  <button id="ar-btn"></button>
-  <input type="text" id="hex-input" value="#000000" maxlength="7">
-  <button id="pen-btn" class="active"></button>
-  <button id="eraser-btn"></button>
-  <button id="img-btn"></button>
-  <button id="clear-btn"></button>
-  <button id="save-btn"></button>
-</div>
+  <button id="ar-btn" style="display:none;"></button>
 
-<script src="{{ url_for('static', filename='javascript_thing.js', v='3.0') }}"></script>
-<script>
-  /* ---- Canvas sizing ---- */
-  const wrap = document.querySelector('.canvas-wrap');
-  function fitCanvas() {
-    const c = document.getElementById('canvas');
-    c.width = wrap.clientWidth;
-    c.height = wrap.clientHeight;
-  }
-  fitCanvas();
-  window.addEventListener('resize', fitCanvas);
+  <script src="{{ url_for('static', filename='javascript_thing.js') }}"></script>
+  <script>
+    const postPanel = document.getElementById("post-panel");
 
-  /* ---- Pen dropdown toggle ---- */
-  const penTool = document.getElementById('pen-tool');
-  const penDrop = document.getElementById('pen-dropdown');
-  penTool.addEventListener('click', (e) => {
-    if (e.target.closest('.dropdown')) return;
-    penDrop.classList.toggle('open');
-  });
-  document.addEventListener('click', (e) => {
-    if (!penTool.contains(e.target)) penDrop.classList.remove('open');
-  });
-
-  /* Mode items */
-  penDrop.querySelectorAll('.dropdown-item').forEach(item => {
-    item.addEventListener('click', () => {
-      penDrop.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('sel'));
-      item.classList.add('sel');
-      const mode = item.dataset.mode;
-      if (mode === 'paint') {
-        document.getElementById('pen-btn').click();
-      } else if (mode === 'erase') {
-        document.getElementById('eraser-btn').click();
-      }
+    document.getElementById("post-open-btn").addEventListener("click", () => {
+      postPanel.classList.add("open");
     });
-  });
-
-  /* Brush size slider */
-  document.getElementById('size-slider').addEventListener('input', (e) => {
-    document.getElementById('size-label').textContent = e.target.value;
-  });
-
-  /* ---- Colour picker ---- */
-  const colorTool = document.getElementById('color-tool');
-  const colorInput = document.getElementById('color-picker');
-  const swatch = document.getElementById('color-swatch');
-  colorTool.addEventListener('click', () => colorInput.click());
-  colorInput.addEventListener('input', (e) => {
-    swatch.style.background = e.target.value;
-    document.getElementById('hex-input').value = e.target.value;
-    document.getElementById('hex-input').dispatchEvent(new Event('change'));
-  });
-
-  /* ---- Upload image ---- */
-  const uploadTool = document.getElementById('upload-tool');
-  const imgUploadInput = document.getElementById('img-upload');
-  uploadTool.addEventListener('click', () => imgUploadInput.click());
-
-  /* ---- Clear canvas ---- */
-  document.getElementById('clear-tool').addEventListener('click', () => {
-    document.getElementById('clear-btn').click();
-  });
-
-  /* ---- Back button ---- */
-  document.getElementById('back-btn').addEventListener('click', () => {
-    window.location.href = "{{ url_for('dashboard') }}";
-  });
-
-  /* ---- Done / checkmark → open post panel ---- */
-  const postPanel = document.getElementById('post-panel');
-  document.getElementById('done-btn').addEventListener('click', () => {
-    postPanel.classList.add('open');
-  });
-  document.getElementById('post-cancel-btn').addEventListener('click', () => {
-    postPanel.classList.remove('open');
-  });
-  document.getElementById('post-submit-btn').addEventListener('click', async () => {
-    const title = document.getElementById('post-title').value.trim();
-    const desc = document.getElementById('post-description').value.trim();
-    const imageData = document.getElementById('canvas').toDataURL('image/png');
-    console.log('Post:', { title, desc, imageData });
-  });
-</script>
+    document.getElementById("post-cancel-btn").addEventListener("click", () => {
+      postPanel.classList.remove("open");
+    });
+    document.getElementById("post-submit-btn").addEventListener("click", async () => {
+      const title = document.getElementById("post-title").value.trim();
+      const description = document.getElementById("post-description").value.trim();
+      const imageData = canvas.toDataURL("image/png");
+      // TODO: wire up to post API
+      console.log("Post:", { title, description, imageData });
+    });
+  </script>
 
 </body>
+
 </html>

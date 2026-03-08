@@ -33,6 +33,7 @@ ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 let drawing = false, erasing = false, brushSize = 4;
 let currentColor = "#000000";
+let appState = "DRAW"; // States: DRAW, IMAGE_PLACE, AR
 let placingImage = null; // image being positioned before commit
 
 function getPos(e) {
@@ -100,8 +101,16 @@ if (hexInput) {
 }
 
 // ===================== IMAGE INSERT =====================
+// ===================== IMAGE INSERT =====================
 const imgBtn = document.getElementById("img-btn");
 const imgUpload = document.getElementById("img-upload");
+const placeOverlay = document.getElementById("place-overlay");
+const placeScaleSlider = document.getElementById("place-scale-slider");
+const placeScaleValueLabel = document.getElementById("place-scale-label");
+const placeRotateSlider = document.getElementById("place-rotate-slider");
+const placeRotateValueLabel = document.getElementById("place-rotate-label");
+const placeStampBtn = document.getElementById("place-stamp-btn");
+const placeCancelBtn = document.getElementById("place-cancel-btn");
 
 if (imgBtn && imgUpload) {
   imgBtn.addEventListener("click", () => imgUpload.click());
@@ -119,14 +128,20 @@ if (imgBtn && imgUpload) {
         if (h > maxH) { w *= maxH / h; h = maxH; }
         placingImage = {
           img, w, h,
-          originalW: w, originalH: h,  // store original fitted size
-          prevW: w, prevH: h,          // track previous size for re-centering
+          originalW: w, originalH: h,
+          prevW: w, prevH: h,
           x: (canvas.width - w) / 2,
           y: (canvas.height - h) / 2,
           dragging: false,
           rotation: 0
         };
-        renderPlacingImage();
+        appState = "IMAGE_PLACE";
+        if (placeOverlay) placeOverlay.style.display = "block";
+        if (placeScaleSlider) placeScaleSlider.value = 100;
+        if (placeScaleValueLabel) placeScaleValueLabel.textContent = "100%";
+        if (placeRotateSlider) placeRotateSlider.value = 0;
+        if (placeRotateValueLabel) placeRotateValueLabel.textContent = "0°";
+        drawPreview();
       };
       img.src = ev.target.result;
     };
@@ -135,127 +150,102 @@ if (imgBtn && imgUpload) {
   });
 }
 
-// Overlay UI for positioning the image before stamping it
-let placeOverlay = null;
+// Global initialization of static overlay events
+if (placeOverlay) {
+  placeOverlay.addEventListener("pointerdown", (e) => {
+    if (appState !== "IMAGE_PLACE" || !placingImage) return;
+    if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
+    const p = getPos(e);
+    placingImage.dragging = true;
+    placingImage.offsetX = p.x - placingImage.x;
+    placingImage.offsetY = p.y - placingImage.y;
+    // Essential for touch handling to take over the pointer
+    placeOverlay.setPointerCapture(e.pointerId);
+  });
+  placeOverlay.addEventListener("pointermove", (e) => {
+    if (!placingImage || !placingImage.dragging) return;
+    const p = getPos(e);
+    placingImage.x = p.x - placingImage.offsetX;
+    placingImage.y = p.y - placingImage.offsetY;
+    if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
+    drawRotatedPreview();
+  });
+  placeOverlay.addEventListener("pointerup", (e) => {
+    if (placingImage) {
+      placingImage.dragging = false;
+      placeOverlay.releasePointerCapture(e.pointerId);
+    }
+  });
+  placeOverlay.addEventListener("pointercancel", (e) => {
+    if (placingImage) {
+      placingImage.dragging = false;
+      placeOverlay.releasePointerCapture(e.pointerId);
+    }
+  });
 
-function renderPlacingImage() {
-  if (!placingImage) return;
-  if (!placeOverlay) {
-    placeOverlay = document.createElement("div");
-    placeOverlay.id = "place-overlay";
-    placeOverlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;z-index:50;cursor:move;touch-action:none;";
-    const hint = document.createElement("div");
-    hint.style.cssText = "position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:white;padding:10px 20px;border-radius:8px;font-size:14px;text-align:center;";
-    hint.innerHTML = "Drag to position &bull; Use sliders to resize & rotate &bull; Click <b>Stamp</b> to place";
-    placeOverlay.appendChild(hint);
+  placeOverlay.addEventListener("wheel", (e) => {
+    if (appState !== "IMAGE_PLACE" || !placingImage) return;
+    e.preventDefault();
+    const scrollScale = e.deltaY < 0 ? 1.05 : 0.95;
+    const aspect = placingImage.w / placingImage.h;
+    const cx = placingImage.x + placingImage.w / 2;
+    const cy = placingImage.y + placingImage.h / 2;
+    placingImage.w *= scrollScale;
+    placingImage.h = placingImage.w / aspect;
+    placingImage.x = cx - placingImage.w / 2;
+    placingImage.y = cy - placingImage.h / 2;
+    placingImage.prevW = placingImage.w;
+    placingImage.prevH = placingImage.h;
 
-    // Controls bar container
-    const controlsBar = document.createElement("div");
-    controlsBar.style.cssText = "position:absolute;bottom:120px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);padding:10px 20px;border-radius:10px;display:flex;flex-direction:column;gap:10px;z-index:51;";
+    // Update slider visually too
+    if (placeScaleSlider) {
+      const currentPct = Math.round((placingImage.w / placingImage.originalW) * 100);
+      placeScaleSlider.value = currentPct;
+      if (placeScaleValueLabel) placeScaleValueLabel.textContent = currentPct + "%";
+    }
 
-    // ---- Scale slider row ----
-    const scaleRow = document.createElement("div");
-    scaleRow.style.cssText = "display:flex;align-items:center;gap:10px;";
-    const scaleLabel = document.createElement("label");
-    scaleLabel.style.cssText = "color:white;font-size:14px;display:flex;align-items:center;gap:8px;white-space:nowrap;";
-    scaleLabel.textContent = "📐 Size: ";
-    const scaleSlider = document.createElement("input");
-    scaleSlider.type = "range";
-    scaleSlider.min = "10";
-    scaleSlider.max = "300";
-    scaleSlider.value = "100";
-    scaleSlider.style.cssText = "width:150px;accent-color:#3498db;";
-    const scaleVal = document.createElement("span");
-    scaleVal.style.cssText = "color:white;font-size:14px;font-weight:bold;min-width:45px;";
-    scaleVal.textContent = "100%";
-
-    scaleSlider.addEventListener("input", () => {
-      const pct = parseInt(scaleSlider.value);
-      scaleVal.textContent = pct + "%";
-      const scaleFactor = pct / 100;
-      const aspect = placingImage.originalW / placingImage.originalH;
-      placingImage.w = placingImage.originalW * scaleFactor;
-      placingImage.h = placingImage.w / aspect;
-      // Re-center on the current center point
-      const cx = placingImage.x + placingImage.prevW / 2;
-      const cy = placingImage.y + placingImage.prevH / 2;
-      placingImage.x = cx - placingImage.w / 2;
-      placingImage.y = cy - placingImage.h / 2;
-      placingImage.prevW = placingImage.w;
-      placingImage.prevH = placingImage.h;
-      if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
-      drawRotatedPreview();
-    });
-    scaleSlider.addEventListener("mousedown", (e) => e.stopPropagation());
-    scaleSlider.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
-    scaleSlider.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: false });
-
-    scaleLabel.appendChild(scaleSlider);
-    scaleRow.appendChild(scaleLabel);
-    scaleRow.appendChild(scaleVal);
-    controlsBar.appendChild(scaleRow);
-
-    // ---- Rotation slider row ----
-    const rotateRow = document.createElement("div");
-    rotateRow.style.cssText = "display:flex;align-items:center;gap:10px;";
-    const rotateLabel = document.createElement("label");
-    rotateLabel.style.cssText = "color:white;font-size:14px;display:flex;align-items:center;gap:8px;white-space:nowrap;";
-    rotateLabel.textContent = "🔄 Rotate: ";
-    const rotateSlider = document.createElement("input");
-    rotateSlider.type = "range";
-    rotateSlider.min = "-180";
-    rotateSlider.max = "180";
-    rotateSlider.value = "0";
-    rotateSlider.style.cssText = "width:150px;accent-color:#e74c3c;";
-    const rotateDeg = document.createElement("span");
-    rotateDeg.style.cssText = "color:white;font-size:14px;font-weight:bold;min-width:40px;";
-    rotateDeg.textContent = "0°";
-
-    rotateSlider.addEventListener("input", () => {
-      placingImage.rotation = parseInt(rotateSlider.value);
-      rotateDeg.textContent = rotateSlider.value + "°";
-      if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
-      drawRotatedPreview();
-    });
-    rotateSlider.addEventListener("mousedown", (e) => e.stopPropagation());
-    rotateSlider.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
-    rotateSlider.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: false });
-
-    rotateLabel.appendChild(rotateSlider);
-    rotateRow.appendChild(rotateLabel);
-    rotateRow.appendChild(rotateDeg);
-    controlsBar.appendChild(rotateRow);
-
-    placeOverlay.appendChild(controlsBar);
-
-    const stampBtn = document.createElement("button");
-    stampBtn.textContent = "✅ Stamp";
-    stampBtn.style.cssText = "position:absolute;bottom:70px;left:50%;transform:translateX(-50%);padding:10px 24px;border:none;border-radius:6px;background:#27ae60;color:white;font-size:16px;font-weight:bold;cursor:pointer;z-index:51;";
-    stampBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); commitImage(); });
-    stampBtn.addEventListener("mousedown", (e) => e.stopPropagation());
-    stampBtn.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
-    placeOverlay.appendChild(stampBtn);
-
-    const cancelBtn = document.createElement("button");
-    cancelBtn.textContent = "❌ Cancel";
-    cancelBtn.style.cssText = "position:absolute;bottom:70px;left:calc(50% + 90px);padding:10px 24px;border:none;border-radius:6px;background:#e74c3c;color:white;font-size:16px;font-weight:bold;cursor:pointer;z-index:51;";
-    cancelBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); removePlaceOverlay(); placingImage = null; });
-    cancelBtn.addEventListener("mousedown", (e) => e.stopPropagation());
-    cancelBtn.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
-    placeOverlay.appendChild(cancelBtn);
-
-    document.body.appendChild(placeOverlay);
-
-    placeOverlay.addEventListener("mousedown", startDragImage);
-    placeOverlay.addEventListener("mousemove", dragImage);
-    placeOverlay.addEventListener("mouseup", stopDragImage);
-    placeOverlay.addEventListener("touchstart", startDragImage, { passive: false });
-    placeOverlay.addEventListener("touchmove", dragImage, { passive: false });
-    placeOverlay.addEventListener("touchend", stopDragImage);
-    placeOverlay.addEventListener("wheel", resizeImage);
-  }
-  drawPreview();
+    if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
+    drawRotatedPreview();
+  }, { passive: false });
 }
+
+if (placeScaleSlider) {
+  placeScaleSlider.addEventListener("input", () => {
+    if (!placingImage) return;
+    const pct = parseInt(placeScaleSlider.value);
+    if (placeScaleValueLabel) placeScaleValueLabel.textContent = pct + "%";
+    const scaleFactor = pct / 100;
+    const aspect = placingImage.originalW / placingImage.originalH;
+    placingImage.w = placingImage.originalW * scaleFactor;
+    placingImage.h = placingImage.w / aspect;
+    const cx = placingImage.x + placingImage.prevW / 2;
+    const cy = placingImage.y + placingImage.prevH / 2;
+    placingImage.x = cx - placingImage.w / 2;
+    placingImage.y = cy - placingImage.h / 2;
+    placingImage.prevW = placingImage.w;
+    placingImage.prevH = placingImage.h;
+    if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
+    drawRotatedPreview();
+  });
+}
+if (placeRotateSlider) {
+  placeRotateSlider.addEventListener("input", () => {
+    if (!placingImage) return;
+    placingImage.rotation = parseInt(placeRotateSlider.value);
+    if (placeRotateValueLabel) placeRotateValueLabel.textContent = placeRotateSlider.value + "°";
+    if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
+    drawRotatedPreview();
+  });
+}
+if (placeStampBtn) {
+  placeStampBtn.addEventListener("click", (e) => { e.preventDefault(); commitImage(); });
+}
+if (placeCancelBtn) {
+  placeCancelBtn.addEventListener("click", (e) => { e.preventDefault(); removePlaceOverlay(); });
+}
+
+// Overlay UI for positioning the image before stamping it
+// function renderPlacingImage() no longer needed, replaced by declarative UI toggle
 
 function drawRotatedPreview() {
   if (!placingImage) return;
@@ -279,41 +269,8 @@ function drawPreview() {
   drawRotatedPreview();
 }
 
-function startDragImage(e) {
-  if (!placingImage) return;
-  if (e.target.tagName === "BUTTON") return;
-  e.preventDefault();
-  const p = getPos(e);
-  placingImage.dragging = true;
-  placingImage.offsetX = p.x - placingImage.x;
-  placingImage.offsetY = p.y - placingImage.y;
-}
-function dragImage(e) {
-  if (!placingImage || !placingImage.dragging) return;
-  e.preventDefault();
-  const p = getPos(e);
-  placingImage.x = p.x - placingImage.offsetX;
-  placingImage.y = p.y - placingImage.offsetY;
-  if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
-  drawRotatedPreview();
-}
-function stopDragImage() { if (placingImage) placingImage.dragging = false; }
-function resizeImage(e) {
-  if (!placingImage) return;
-  e.preventDefault();
-  const scale = e.deltaY < 0 ? 1.05 : 0.95;
-  const aspect = placingImage.w / placingImage.h;
-  const cx = placingImage.x + placingImage.w / 2;
-  const cy = placingImage.y + placingImage.h / 2;
-  placingImage.w *= scale;
-  placingImage.h = placingImage.w / aspect;
-  placingImage.x = cx - placingImage.w / 2;
-  placingImage.y = cy - placingImage.h / 2;
-  placingImage.prevW = placingImage.w;
-  placingImage.prevH = placingImage.h;
-  if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
-  drawRotatedPreview();
-}
+// function startDragImage, dragImage, stopDragImage, resizeImage replaced by global pointer listeners above
+
 
 function commitImage() {
   try {
@@ -322,7 +279,6 @@ function commitImage() {
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
 
-    // Commit with rotation
     const { img, x, y, w, h, rotation } = placingImage;
     const cx = x + w / 2;
     const cy = y + h / 2;
@@ -333,6 +289,7 @@ function commitImage() {
     ctx.restore();
 
     placingImage = null;
+    appState = "DRAW";
     removePlaceOverlay(true);
   } catch (err) {
     console.error("Error in commitImage:", err);
@@ -341,22 +298,16 @@ function commitImage() {
 }
 
 function removePlaceOverlay(committed = false) {
-  console.log("Removing place overlay");
   try {
-    if (placeOverlay) {
-      placeOverlay.remove();
-      placeOverlay = null;
-    }
+    if (placeOverlay) placeOverlay.style.display = "none";
+    appState = "DRAW";
 
-    // If we still have an active placingImage with savedData and we didn't just commit, 
-    // it means we cancelled and need to restore the canvas to its state before the preview.
     if (!committed && placingImage && placingImage.savedData) {
       ctx.putImageData(placingImage.savedData, 0, 0);
     }
+    placingImage = null;
   } catch (err) {
     console.error("Error in removePlaceOverlay:", err);
-    alert("Error in removePlaceOverlay: " + err.message);
-
   }
 }
 
@@ -374,7 +325,7 @@ window.addEventListener("resize", () => {
   ctx.putImageData(img, 0, 0);
 });
 
-// ===================== AR MODE (WebXR) =====================
+// ===================== AR MODE (WebXR + raw WebGL2) =====================
 const arOverlay = document.getElementById("ar-overlay");
 const arStatus = document.getElementById("ar-status");
 const reticle = document.getElementById("reticle");
@@ -383,24 +334,259 @@ let xrSession = null;
 let xrRefSpace = null;
 let xrHitTestSource = null;
 let nearbyInterval = null;
-let gl = null;
-let renderer = null;
-let scene = null;
-let camera = null;
-let reticleModel = null;
-let previewMesh = null;
+let gl = null;               // WebGL2RenderingContext
+let glLayer = null;          // XRWebGLLayer
+let shaderProgram = null;    // compiled GLSL program
+let quadVAO = null;          // shared quad vertex array
 let lastHitPose = null;
-let arScaleCm = 50; // default 50cm
-let arRotationDeg = 0;         // user rotation for AR placement
-let arStartBearing = 0;        // compass heading when AR started
+let arScaleCm = 50;
+let arRotationDeg = 0;
+let arStartBearing = 0;
 let arStartLat = null;
 let arStartLng = null;
-let lastPlacedHeight = 1.5;    // last placed graffiti height (meters from floor)
+let lastPlacedHeight = 1.5;
 let lastPlacedSurfaceType = "wall";
 let lastPlacedQuaternion = [0, 0, 0, 1];
 let lastPlacedX = undefined;
 let lastPlacedZ = undefined;
-const APP_VERSION = "2.0";   // Major version bump after conflict resolution
+const APP_VERSION = "3.0-webgl2";
+
+// Placed graffiti pieces (raw WebGL2 objects)
+// Each: { modelMatrix, texture, id?, anchor?, anchorOffset?, surfaceType, scaleCm, aspect, rotDeg }
+const placedPieces = [];
+let previewTexture = null;   // WebGLTexture for live preview
+let previewMatrix = null;    // Float32Array(16)
+let reticleMatrix = null;    // Float32Array(16) for the reticle ring
+let reticleSurface = "floor";
+let lastCameraPos = [0, 0, 0];
+let anchorsSupported = false; // set true if session grants 'anchors'
+let lastHitFrame = null;      // current XR frame for anchor creation
+
+// Uniform locations (filled after shader compile)
+let uViewProjection, uModel, uOpacity, uMode, uColor;
+
+// ---- 4x4 MATRIX UTILITIES (column-major for WebGL) ----
+function mat4Identity() {
+  return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+}
+function mat4Multiply(a, b) {
+  const o = new Float32Array(16);
+  for (let i = 0; i < 4; i++)
+    for (let j = 0; j < 4; j++)
+      o[j*4+i] = a[i]*b[j*4] + a[4+i]*b[j*4+1] + a[8+i]*b[j*4+2] + a[12+i]*b[j*4+3];
+  return o;
+}
+function mat4FromCols(x, y, z, p) {
+  return new Float32Array([x[0],x[1],x[2],0, y[0],y[1],y[2],0, z[0],z[1],z[2],0, p[0],p[1],p[2],1]);
+}
+function mat4RotateAxis(m, axis, rad) {
+  const c = Math.cos(rad), s = Math.sin(rad), t = 1 - c;
+  const [x, y, z] = axis;
+  const r = new Float32Array([
+    t*x*x+c,   t*x*y+s*z, t*x*z-s*y, 0,
+    t*x*y-s*z, t*y*y+c,   t*y*z+s*x, 0,
+    t*x*z+s*y, t*y*z-s*x, t*z*z+c,   0,
+    0,0,0,1
+  ]);
+  return mat4Multiply(m, r);
+}
+
+// ---- VECTOR UTILITIES ----
+function v3Dot(a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+function v3Cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function v3Sub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+function v3Add(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+function v3Scale(v, s) { return [v[0]*s, v[1]*s, v[2]*s]; }
+function v3Norm(v) {
+  const l = Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
+  return l > 1e-6 ? [v[0]/l, v[1]/l, v[2]/l] : [0,0,0];
+}
+function v3Len(v) { return Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); }
+
+// ---- GLSL SHADERS (WebGL2 / GLSL 300 es) ----
+const VERT_SRC = `#version 300 es
+in vec2 a_pos;
+in vec2 a_uv;
+uniform mat4 u_vp;
+uniform mat4 u_model;
+out vec2 v_uv;
+out vec2 v_pos;
+void main(){
+  gl_Position = u_vp * u_model * vec4(a_pos, 0.0, 1.0);
+  v_uv = a_uv;
+  v_pos = a_pos;
+}`;
+
+const FRAG_SRC = `#version 300 es
+precision mediump float;
+in vec2 v_uv;
+in vec2 v_pos;
+uniform sampler2D u_tex;
+uniform float u_opacity;
+uniform int u_mode;       // 0 = textured quad, 1 = reticle ring
+uniform vec3 u_color;
+out vec4 outColor;
+void main(){
+  if(u_mode == 1){
+    float d = length(v_pos * 2.0);
+    float ring = smoothstep(0.70, 0.78, d) * (1.0 - smoothstep(0.92, 1.0, d));
+    if(ring < 0.01) discard;
+    outColor = vec4(u_color, ring * u_opacity);
+  } else {
+    vec4 t = texture(u_tex, v_uv);
+    outColor = vec4(t.rgb, t.a * u_opacity);
+  }
+}`;
+
+// ---- COMPILE SHADERS & BUILD PROGRAM ----
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error("Shader compile:", gl.getShaderInfoLog(s));
+    gl.deleteShader(s);
+    return null;
+  }
+  return s;
+}
+
+function initWebGL2() {
+  const vs = compileShader(gl.VERTEX_SHADER, VERT_SRC);
+  const fs = compileShader(gl.FRAGMENT_SHADER, FRAG_SRC);
+  shaderProgram = gl.createProgram();
+  gl.attachShader(shaderProgram, vs);
+  gl.attachShader(shaderProgram, fs);
+  gl.linkProgram(shaderProgram);
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    console.error("Program link:", gl.getProgramInfoLog(shaderProgram));
+    return false;
+  }
+  gl.useProgram(shaderProgram);
+
+  // Uniform locations
+  uViewProjection = gl.getUniformLocation(shaderProgram, "u_vp");
+  uModel          = gl.getUniformLocation(shaderProgram, "u_model");
+  uOpacity        = gl.getUniformLocation(shaderProgram, "u_opacity");
+  uMode           = gl.getUniformLocation(shaderProgram, "u_mode");
+  uColor          = gl.getUniformLocation(shaderProgram, "u_color");
+
+  // Shared quad VAO: XY plane, -0.5..0.5, with UVs
+  const verts = new Float32Array([
+    // pos (x,y)   uv (u,v)
+    -0.5, -0.5,    0, 1,
+     0.5, -0.5,    1, 1,
+     0.5,  0.5,    1, 0,
+     0.5,  0.5,    1, 0,
+    -0.5,  0.5,    0, 0,
+    -0.5, -0.5,    0, 1,
+  ]);
+  quadVAO = gl.createVertexArray();
+  gl.bindVertexArray(quadVAO);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+
+  const aPos = gl.getAttribLocation(shaderProgram, "a_pos");
+  const aUV  = gl.getAttribLocation(shaderProgram, "a_uv");
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 16, 0);
+  gl.enableVertexAttribArray(aUV);
+  gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 16, 8);
+  gl.bindVertexArray(null);
+
+  return true;
+}
+
+// ---- CREATE WEBGL TEXTURE FROM IMAGE/CANVAS ----
+function createTexture(source) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  return tex;
+}
+
+// ---- BUILD GRAFFITI MODEL MATRIX FROM HIT-TEST 4x4 ----
+function buildSurfaceMatrix(hitMatrix, scaleCm, aspect, rotDeg, camPos, forceMode) {
+  // Extract position from column 3
+  const pos = [hitMatrix[12], hitMatrix[13], hitMatrix[14]];
+  // Extract surface normal = Y column of hit matrix
+  let normal = v3Norm([hitMatrix[4], hitMatrix[5], hitMatrix[6]]);
+
+  // Classify or force surface type
+  const absNY = Math.abs(normal[1]);
+  let isWall, isCeiling, surfaceType;
+
+  if (forceMode === "wall") {
+    isWall = true; isCeiling = false; surfaceType = "wall";
+    // Override normal: horizontal, facing camera
+    let n = v3Sub(camPos, pos); n[1] = 0;
+    normal = v3Len(n) > 0.001 ? v3Norm(n) : [0, 0, 1];
+  } else if (forceMode === "floor") {
+    isWall = false; isCeiling = false; surfaceType = "floor";
+    normal = [0, 1, 0];
+  } else if (forceMode === "ceiling") {
+    isWall = false; isCeiling = true; surfaceType = "ceiling";
+    normal = [0, -1, 0];
+  } else {
+    isWall = absNY < 0.707;
+    isCeiling = !isWall && normal[1] < -0.707;
+    surfaceType = isWall ? "wall" : (isCeiling ? "ceiling" : "floor");
+  }
+
+  // Build orthonormal frame: right (X), up (Y), normal (Z) of the graffiti plane
+  let right, up;
+  if (isWall) {
+    const worldUp = [0, 1, 0];
+    const d = v3Dot(worldUp, normal);
+    up = v3Norm(v3Sub(worldUp, v3Scale(normal, d)));
+    right = v3Norm(v3Cross(up, normal));
+  } else {
+    const toCamera = v3Sub(camPos, pos);
+    const d = v3Dot(toCamera, normal);
+    const projected = v3Norm(v3Sub(toCamera, v3Scale(normal, d)));
+    up = v3Scale(projected, isCeiling ? 1 : -1);
+    right = v3Norm(v3Cross(up, normal));
+  }
+
+  // User rotation around the normal axis
+  if (rotDeg !== 0) {
+    const rad = rotDeg * Math.PI / 180;
+    const c = Math.cos(rad), s = Math.sin(rad);
+    const nr = v3Add(v3Scale(right, c), v3Scale(up, s));
+    const nu = v3Add(v3Scale(right, -s), v3Scale(up, c));
+    right = nr; up = nu;
+  }
+
+  // Scale: width along right, height along up
+  const w = scaleCm / 100;
+  const h = w / aspect;
+  const offset = v3Scale(normal, 0.002);
+  const finalPos = v3Add(pos, offset);
+
+  // Columns: right*w, up*h, normal, position
+  const matrix = mat4FromCols(
+    v3Scale(right, w), v3Scale(up, h), normal, finalPos
+  );
+
+  return { matrix, surfaceType, position: pos, normal, right, up };
+}
+
+// ---- RETICLE MATRIX (ring on surface, scaled to arScaleCm) ----
+function buildReticleMatrix(hitMatrix, camPos, forceMode) {
+  const info = buildSurfaceMatrix(hitMatrix, arScaleCm, 1, 0, camPos, forceMode);
+  // Reticle is a unit ring; scale both axes equally
+  const radius = (arScaleCm / 100) / 2;
+  const m = mat4FromCols(
+    v3Scale(info.right, radius), v3Scale(info.up, radius), info.normal,
+    v3Add(info.position, v3Scale(info.normal, 0.001))
+  );
+  return { matrix: m, surfaceType: info.surfaceType };
+}
 
 // Scale slider
 const arScaleSlider = document.getElementById("ar-scale-slider");
@@ -412,315 +598,289 @@ if (arScaleSlider) {
   arScaleSlider.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: false });
   arScaleSlider.addEventListener("click", (e) => e.stopPropagation());
   arScaleSlider.addEventListener("pointerdown", (e) => e.stopPropagation());
-
   arScaleSlider.addEventListener("input", () => {
     arScaleCm = parseInt(arScaleSlider.value);
-
     if (arScaleLabel) {
       arScaleLabel.textContent = arScaleCm >= 100
-        ? (arScaleCm / 100).toFixed(1) + "m"
-        : arScaleCm + "cm";
+        ? (arScaleCm / 100).toFixed(1) + "m" : arScaleCm + "cm";
     }
-
-    const minPx = 30;
-    const maxPx = 250;
+    const minPx = 30, maxPx = 250;
     const diameter = minPx + ((arScaleCm - 10) / (300 - 10)) * (maxPx - minPx);
-    if (reticleEl) {
-      reticleEl.style.width = diameter + "px";
-      reticleEl.style.height = diameter + "px";
-    }
-
-    if (reticleModel) {
-      const radius = (arScaleCm / 100) / 2;
-      reticleModel.scale.set(radius / 0.07, radius / 0.07, radius / 0.07);
-    }
+    if (reticleEl) { reticleEl.style.width = diameter + "px"; reticleEl.style.height = diameter + "px"; }
   });
 }
 
 // Rotation slider
 const arRotateSlider = document.getElementById("ar-rotate-slider");
 const arRotateLabel = document.getElementById("ar-rotate-label");
-
 if (arRotateSlider) {
   arRotateSlider.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
   arRotateSlider.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: false });
   arRotateSlider.addEventListener("click", (e) => e.stopPropagation());
   arRotateSlider.addEventListener("pointerdown", (e) => e.stopPropagation());
-
   arRotateSlider.addEventListener("input", () => {
     arRotationDeg = parseInt(arRotateSlider.value);
     if (arRotateLabel) arRotateLabel.textContent = arRotationDeg + "°";
   });
 }
 
-let debugNormalArrow = null;  // ArrowHelper showing surface normal
-let debugPlane = null;        // translucent plane showing the detected surface
+// ---- PLACE GRAFFITI with WebXR ANCHOR (creates a new piece locked to the wall) ----
+async function placeDrawingAtHit(pose, frame) {
+  const aspect = canvas.width / canvas.height;
+  const hitMat = pose.transform.matrix;
+  const mode = document.getElementById("ar-surface-mode")?.value || "auto";
+  const forceMode = mode === "auto" ? null : mode;
+  const info = buildSurfaceMatrix(hitMat, arScaleCm, aspect, arRotationDeg, lastCameraPos, forceMode);
 
-// Three.js scene setup
-function initThreeScene() {
-  scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+  const tex = createTexture(canvas);
+  const piece = {
+    modelMatrix: info.matrix,
+    texture: tex,
+    anchor: null,
+    // Store placement params so we can rebuild the matrix from anchor pose
+    surfaceType: info.surfaceType,
+    scaleCm: arScaleCm,
+    aspect: aspect,
+    rotDeg: arRotationDeg,
+    forceMode: forceMode,
+    normal: info.normal,
+    right: info.right,
+    up: info.up
+  };
 
-  // Reticle — a ring that shows where surfaces are detected (color changes per surface type)
-  const ringGeo = new THREE.RingGeometry(0.05, 0.07, 32).rotateX(-Math.PI / 2);
-  const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
-  reticleModel = new THREE.Mesh(ringGeo, ringMat);
-  reticleModel.visible = false;
-  reticleModel.matrixAutoUpdate = false;
-  scene.add(reticleModel);
+  // Try to create a WebXR anchor at the hit-test position
+  if (anchorsSupported && frame) {
+    try {
+      const anchor = await frame.createAnchor(pose.transform, xrRefSpace);
+      piece.anchor = anchor;
+      console.log("⚓ Anchor created for piece", placedPieces.length);
+    } catch (e) {
+      console.warn("Anchor creation failed, using static matrix:", e.message);
+    }
+  }
 
-  // Debug: arrow showing surface normal direction (red=wall, green=floor, blue=ceiling)
-  debugNormalArrow = new THREE.ArrowHelper(
-    new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 0.15, 0x00ff00, 0.04, 0.03
+  placedPieces.push(piece);
+  updateAnchorCount();
+
+  lastPlacedHeight = info.position[1];
+  lastPlacedSurfaceType = info.surfaceType;
+  const m = info.matrix;
+  lastPlacedQuaternion = matrixToQuat(m);
+  lastPlacedX = info.position[0];
+  lastPlacedZ = info.position[2];
+
+  const lockIcon = piece.anchor ? "⚓" : "📌";
+  arStatus.textContent = lockIcon + " LOCKED on " + info.surfaceType.toUpperCase() + " at " + arScaleCm + "cm";
+}
+
+// Undo last placed piece
+function undoLastPiece() {
+  if (placedPieces.length === 0) return;
+  const removed = placedPieces.pop();
+  if (removed.anchor) {
+    try { removed.anchor.delete(); } catch (e) { /* ok */ }
+  }
+  if (removed.texture) gl.deleteTexture(removed.texture);
+  updateAnchorCount();
+  arStatus.textContent = "↩ Undone — " + placedPieces.length + " piece(s) remain";
+}
+
+function updateAnchorCount() {
+  const el = document.getElementById("ar-anchor-count");
+  if (!el) return;
+  const anchored = placedPieces.filter(p => p.anchor).length;
+  const total = placedPieces.length;
+  el.textContent = total === 0 ? "" : `⚓ ${anchored}/${total} anchored`;
+}
+
+// Extract quaternion from a rotation matrix (ignores scale)
+function matrixToQuat(m) {
+  // Normalize columns first
+  const c0 = v3Norm([m[0], m[1], m[2]]);
+  const c1 = v3Norm([m[4], m[5], m[6]]);
+  const c2 = v3Norm([m[8], m[9], m[10]]);
+  const trace = c0[0] + c1[1] + c2[2];
+  let w, x, y, z;
+  if (trace > 0) {
+    const s = 0.5 / Math.sqrt(trace + 1);
+    w = 0.25 / s;
+    x = (c1[2] - c2[1]) * s;
+    y = (c2[0] - c0[2]) * s;
+    z = (c0[1] - c1[0]) * s;
+  } else if (c0[0] > c1[1] && c0[0] > c2[2]) {
+    const s = 2 * Math.sqrt(1 + c0[0] - c1[1] - c2[2]);
+    w = (c1[2] - c2[1]) / s;
+    x = 0.25 * s;
+    y = (c1[0] + c0[1]) / s;
+    z = (c2[0] + c0[2]) / s;
+  } else if (c1[1] > c2[2]) {
+    const s = 2 * Math.sqrt(1 + c1[1] - c0[0] - c2[2]);
+    w = (c2[0] - c0[2]) / s;
+    x = (c1[0] + c0[1]) / s;
+    y = 0.25 * s;
+    z = (c2[1] + c1[2]) / s;
+  } else {
+    const s = 2 * Math.sqrt(1 + c2[2] - c0[0] - c1[1]);
+    w = (c0[1] - c1[0]) / s;
+    x = (c2[0] + c0[2]) / s;
+    y = (c2[1] + c1[2]) / s;
+    z = 0.25 * s;
+  }
+  return [x, y, z, w];
+}
+
+// ---- Rebuild model matrix from an anchor's updated pose ----
+function rebuildMatrixFromAnchor(piece, anchorPose) {
+  const anchorMat = anchorPose.transform.matrix;
+  const pos = [anchorMat[12], anchorMat[13], anchorMat[14]];
+  // Reconstruct the graffiti plane using saved orientation vectors + anchor position
+  const w = piece.scaleCm / 100;
+  const h = w / piece.aspect;
+  const offset = v3Scale(piece.normal, 0.002);
+  const finalPos = v3Add(pos, offset);
+  piece.modelMatrix = mat4FromCols(
+    v3Scale(piece.right, w), v3Scale(piece.up, h), piece.normal, finalPos
   );
-  debugNormalArrow.visible = false;
-  scene.add(debugNormalArrow);
-
-  // Debug: translucent quad showing the detected surface patch
-  const dbgGeo = new THREE.PlaneGeometry(0.3, 0.3);
-  const dbgMat = new THREE.MeshBasicMaterial({
-    color: 0x00ff00, transparent: true, opacity: 0.25,
-    side: THREE.DoubleSide, depthTest: false
-  });
-  debugPlane = new THREE.Mesh(dbgGeo, dbgMat);
-  debugPlane.visible = false;
-  debugPlane.matrixAutoUpdate = false;
-  scene.add(debugPlane);
-
-  // Preview Image Mesh
-  const previewGeo = new THREE.PlaneGeometry(1, 1);
-  const previewMat = new THREE.MeshBasicMaterial({
-    transparent: true,
-    opacity: 0.5,
-    side: THREE.DoubleSide,
-    depthTest: false // Ensure it renders on top of the real world and reticle
-  });
-  previewMesh = new THREE.Mesh(previewGeo, previewMat);
-  previewMesh.renderOrder = 1; // Render after the reticle
-  previewMesh.visible = false;
-  previewMesh.matrixAutoUpdate = false;
-  scene.add(previewMesh);
 }
 
-// Create a plane with the drawing texture, oriented to lie FLAT on the detected surface
-function placeDrawingAtHit(pose) {
-  const drawingTexture = new THREE.CanvasTexture(canvas);
-  drawingTexture.needsUpdate = true;
+// ---- XR FRAME LOOP (raw WebGL2) ----
+function onXRFrame(time, frame) {
+  xrSession.requestAnimationFrame(onXRFrame);
+  const pose = frame.getViewerPose(xrRefSpace);
+  if (!pose) return;
 
-  const aspect = canvas.width / canvas.height;
-  const planeWidth = arScaleCm / 100;
-  const planeHeight = planeWidth / aspect;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
-  const material = new THREE.MeshBasicMaterial({
-    map: drawingTexture,
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthTest: true,
-    depthWrite: false
-  });
-
-  const mesh = new THREE.Mesh(geometry, material);
-
-  const matrix = new THREE.Matrix4();
-  matrix.fromArray(pose.transform.matrix);
-
-  const position = new THREE.Vector3();
-  const quaternion = new THREE.Quaternion();
-  const scaleVec = new THREE.Vector3();
-  matrix.decompose(position, quaternion, scaleVec);
-
-  const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize();
-
-  const modeSelector = document.getElementById("ar-surface-mode");
-  const mode = modeSelector ? modeSelector.value : "auto";
-
-  let isWall = false;
-  let isCeiling = false;
-  let surfaceType = "floor";
-
-  if (mode === "auto") {
-    isWall = Math.abs(surfaceNormal.y) < 0.707;
-    isCeiling = !isWall && surfaceNormal.y < -0.707;
-    surfaceType = isWall ? "wall" : (isCeiling ? "ceiling" : "floor");
-  } else if (mode === "wall") {
-    isWall = true;
-    surfaceType = "wall";
-    const camPos = new THREE.Vector3();
-    camera.getWorldPosition(camPos);
-    surfaceNormal.copy(camPos).sub(position);
-    surfaceNormal.y = 0;
-    if (surfaceNormal.lengthSq() > 0.001) surfaceNormal.normalize();
-    else surfaceNormal.set(0, 0, 1);
-  } else if (mode === "floor") {
-    isWall = false;
-    surfaceType = "floor";
-    surfaceNormal.set(0, 1, 0);
+  // Update anchored pieces — WebXR may refine anchor positions as SLAM improves
+  for (const piece of placedPieces) {
+    if (piece.anchor) {
+      const anchorPose = frame.getPose(piece.anchor.anchorSpace, xrRefSpace);
+      if (anchorPose) {
+        rebuildMatrixFromAnchor(piece, anchorPose);
+      }
+    }
   }
 
-  // Align mesh flat on the surface
-  const defaultNormal = new THREE.Vector3(0, 0, 1);
-  const alignQuaternion = new THREE.Quaternion().setFromUnitVectors(defaultNormal, surfaceNormal);
-  mesh.quaternion.copy(alignQuaternion);
+  // Process hit tests
+  const mode = document.getElementById("ar-surface-mode")?.value || "auto";
+  const forceMode = mode === "auto" ? null : mode;
+  const hitResults = frame.getHitTestResults(xrHitTestSource);
+  let hitSurface = "floor";
 
-  if (isWall) {
-    const globalUp = new THREE.Vector3(0, 1, 0);
-    const projectedUp = globalUp.clone().sub(surfaceNormal.clone().multiplyScalar(globalUp.dot(surfaceNormal))).normalize();
-    const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion).normalize();
-    const twistQuaternion = new THREE.Quaternion().setFromUnitVectors(currentUp, projectedUp);
-    mesh.quaternion.premultiply(twistQuaternion);
+  if (hitResults.length > 0) {
+    lastHitPose = hitResults[0].getPose(xrRefSpace);
+    lastHitFrame = frame; // store for anchor creation on tap
+    const hitMat = lastHitPose.transform.matrix;
+    const aspect = canvas.width / canvas.height;
+
+    // Build reticle matrix
+    const retInfo = buildReticleMatrix(hitMat, lastCameraPos, forceMode);
+    reticleMatrix = retInfo.matrix;
+    hitSurface = retInfo.surfaceType;
+
+    // Build preview matrix
+    const prevInfo = buildSurfaceMatrix(hitMat, arScaleCm, aspect, arRotationDeg, lastCameraPos, forceMode);
+    previewMatrix = prevInfo.matrix;
+
+    // Update preview texture from current canvas
+    if (!previewTexture) previewTexture = createTexture(canvas);
+    else {
+      gl.bindTexture(gl.TEXTURE_2D, previewTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    }
+
+    arStatus.textContent = "[" + hitSurface.toUpperCase() + (forceMode ? " OVERRIDE" : "") + "] - tap to place!";
   } else {
-    const camPos = new THREE.Vector3();
-    camera.getWorldPosition(camPos);
-    const toCam = camPos.clone().sub(position);
-    const projectedToCam = toCam.sub(surfaceNormal.clone().multiplyScalar(toCam.dot(surfaceNormal))).normalize();
-    const desiredUp = projectedToCam.clone().negate();
-    if (isCeiling) desiredUp.negate();
-    const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion).normalize();
-    const twistQuaternion = new THREE.Quaternion().setFromUnitVectors(currentUp, desiredUp);
-    mesh.quaternion.premultiply(twistQuaternion);
+    lastHitPose = null;
+    lastHitFrame = null;
+    reticleMatrix = null;
+    previewMatrix = null;
+    arStatus.textContent = "Scanning...";
   }
 
-  // Apply user rotation around the surface normal
-  if (arRotationDeg !== 0) {
-    const rotQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal.normalize(), arRotationDeg * Math.PI / 180);
-    mesh.quaternion.premultiply(rotQ);
+  // Render for each XR view
+  for (const view of pose.views) {
+    const vp = glLayer.getViewport(view);
+    gl.viewport(vp.x, vp.y, vp.width, vp.height);
+
+    // viewProjection = projection * inverse(view)
+    const vpMat = mat4Multiply(view.projectionMatrix, view.transform.inverse.matrix);
+
+    // Store camera position for surface calculations
+    lastCameraPos = [
+      view.transform.position.x,
+      view.transform.position.y,
+      view.transform.position.z
+    ];
+
+    gl.useProgram(shaderProgram);
+    gl.uniformMatrix4fv(uViewProjection, false, vpMat);
+    gl.bindVertexArray(quadVAO);
+
+    // Draw placed graffiti pieces (mode 0 = textured)
+    gl.uniform1i(uMode, 0);
+    for (const piece of placedPieces) {
+      gl.uniformMatrix4fv(uModel, false, piece.modelMatrix);
+      gl.uniform1f(uOpacity, 1.0);
+      gl.bindTexture(gl.TEXTURE_2D, piece.texture);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    // Draw preview (semi-transparent)
+    if (previewMatrix && previewTexture) {
+      gl.uniform1i(uMode, 0);
+      gl.uniformMatrix4fv(uModel, false, previewMatrix);
+      gl.uniform1f(uOpacity, 0.45);
+      gl.bindTexture(gl.TEXTURE_2D, previewTexture);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    // Draw reticle ring (mode 1)
+    if (reticleMatrix) {
+      gl.uniform1i(uMode, 1);
+      gl.uniformMatrix4fv(uModel, false, reticleMatrix);
+      gl.uniform1f(uOpacity, 0.9);
+      const surfColors = { wall: [1,0.2,0.2], floor: [0.2,1,0.2], ceiling: [0.2,0.8,1] };
+      gl.uniform3fv(uColor, surfColors[hitSurface] || [1,1,1]);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    gl.bindVertexArray(null);
   }
-
-  mesh.position.copy(position);
-  mesh.position.add(surfaceNormal.clone().multiplyScalar(0.002));
-
-  mesh.updateMatrix();
-  mesh.updateMatrixWorld();
-  mesh.matrixAutoUpdate = false;
-  mesh.matrixWorldAutoUpdate = false;
-
-  lastPlacedHeight = position.y;
-  lastPlacedSurfaceType = surfaceType;
-  lastPlacedQuaternion = [mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w];
-  lastPlacedX = mesh.position.x;
-  lastPlacedZ = mesh.position.z;
-
-  scene.add(mesh);
-  arStatus.textContent = "🔒 LOCKED on " + surfaceType.toUpperCase() + " at " + arScaleCm + "cm";
-  return mesh;
-}
-
-function updatePreviewMesh(pose) {
-  if (!previewMesh) return;
-
-  if (!previewMesh.material.map) {
-    const drawingTexture = new THREE.CanvasTexture(canvas);
-    previewMesh.material.map = drawingTexture;
-    previewMesh.material.needsUpdate = true;
-  }
-
-  const aspect = canvas.width / canvas.height;
-  const planeWidth = arScaleCm / 100;
-  const planeHeight = planeWidth / aspect;
-
-  previewMesh.scale.set(planeWidth, planeHeight, 1);
-
-  const matrix = new THREE.Matrix4();
-  matrix.fromArray(pose.transform.matrix);
-
-  const position = new THREE.Vector3();
-  const quaternion = new THREE.Quaternion();
-  const scaleVec = new THREE.Vector3();
-  matrix.decompose(position, quaternion, scaleVec);
-
-  const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize();
-
-  const modeSelector = document.getElementById("ar-surface-mode");
-  const mode = modeSelector ? modeSelector.value : "auto";
-
-  let isWall = false;
-  let isCeiling = false;
-
-  if (mode === "auto") {
-    isWall = Math.abs(surfaceNormal.y) < 0.7;
-    isCeiling = !isWall && surfaceNormal.y < -0.7;
-  } else if (mode === "wall") {
-    isWall = true;
-    const camPos = new THREE.Vector3();
-    camera.getWorldPosition(camPos);
-    surfaceNormal.copy(camPos).sub(position);
-    surfaceNormal.y = 0;
-    if (surfaceNormal.lengthSq() > 0.001) surfaceNormal.normalize();
-    else surfaceNormal.set(0, 0, 1);
-  } else if (mode === "floor") {
-    isWall = false;
-    surfaceNormal.set(0, 1, 0);
-  }
-
-  const defaultNormal = new THREE.Vector3(0, 0, 1);
-  const alignQuaternion = new THREE.Quaternion().setFromUnitVectors(defaultNormal, surfaceNormal);
-  previewMesh.quaternion.copy(alignQuaternion);
-
-  if (isWall) {
-    const globalUp = new THREE.Vector3(0, 1, 0);
-    const projectedUp = globalUp.clone().sub(surfaceNormal.clone().multiplyScalar(globalUp.dot(surfaceNormal))).normalize();
-    const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(previewMesh.quaternion).normalize();
-    const twistQuaternion = new THREE.Quaternion().setFromUnitVectors(currentUp, projectedUp);
-    previewMesh.quaternion.premultiply(twistQuaternion);
-  } else {
-    const camPos = new THREE.Vector3();
-    camera.getWorldPosition(camPos);
-    const toCam = camPos.clone().sub(position);
-    const projectedToCam = toCam.sub(surfaceNormal.clone().multiplyScalar(toCam.dot(surfaceNormal))).normalize();
-    const desiredUp = projectedToCam.clone().negate();
-    if (isCeiling) desiredUp.negate();
-    const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(previewMesh.quaternion).normalize();
-    const twistQuaternion = new THREE.Quaternion().setFromUnitVectors(currentUp, desiredUp);
-    previewMesh.quaternion.premultiply(twistQuaternion);
-  }
-
-  // Apply user rotation to preview too
-  if (arRotationDeg !== 0) {
-    const rotQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal.normalize(), arRotationDeg * Math.PI / 180);
-    previewMesh.quaternion.premultiply(rotQ);
-  }
-
-  previewMesh.position.copy(position);
-  previewMesh.position.add(surfaceNormal.clone().multiplyScalar(0.003));
-
-  previewMesh.updateMatrix();
-  previewMesh.updateMatrixWorld();
-  previewMesh.visible = true;
 }
 
 function isSecureContext() {
   return location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
 }
 
-// Start WebXR AR session
+// ---- START WEBXR AR SESSION ----
 document.getElementById("ar-btn").addEventListener("click", async () => {
-  if (!isSecureContext()) {
-    alert("AR requires HTTPS.");
-    return;
-  }
-  if (!navigator.xr) {
-    alert("WebXR not supported.");
-    return;
-  }
+  if (!isSecureContext()) { alert("AR requires HTTPS."); return; }
+  if (!navigator.xr) { alert("WebXR not supported."); return; }
   const supported = await navigator.xr.isSessionSupported("immersive-ar");
-  if (!supported) {
-    alert("Immersive AR not supported.");
-    return;
-  }
+  if (!supported) { alert("Immersive AR not supported."); return; }
 
   try {
-    initThreeScene();
+    // Create WebGL2 context
     const arCanvas = document.createElement("canvas");
-    gl = arCanvas.getContext("webgl", { xrCompatible: true });
-    renderer = new THREE.WebGLRenderer({ canvas: arCanvas, context: gl, alpha: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.xr.enabled = true;
+    gl = arCanvas.getContext("webgl2", { xrCompatible: true, alpha: true });
+    if (!gl) { alert("WebGL2 not available."); return; }
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.clearColor(0, 0, 0, 0);
+
+    if (!initWebGL2()) { alert("Shader compilation failed."); return; }
 
     arStartBearing = userBearing;
     arStartLat = userLat;
     arStartLng = userLng;
+    placedPieces.length = 0;
+    previewTexture = null;
+    lastHitFrame = null;
 
     xrSession = await navigator.xr.requestSession("immersive-ar", {
       requiredFeatures: ["hit-test"],
@@ -728,100 +888,59 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
       domOverlay: { root: arOverlay }
     });
 
+    // Check if anchors were actually granted
+    anchorsSupported = xrSession.enabledFeatures &&
+      xrSession.enabledFeatures.includes("anchors");
+    console.log("⚓ Anchors supported:", anchorsSupported);
+
     arOverlay.style.display = "block";
     document.getElementById("draw-toolbar").style.display = "none";
     document.getElementById("canvas").style.display = "none";
 
-    renderer.xr.setReferenceSpaceType("local");
-    await renderer.xr.setSession(xrSession);
+    // Create XRWebGLLayer and bind to session
+    glLayer = new XRWebGLLayer(xrSession, gl);
+    await xrSession.updateRenderState({ baseLayer: glLayer });
+    appState = "AR";
 
     xrRefSpace = await xrSession.requestReferenceSpace("local");
     const viewerSpace = await xrSession.requestReferenceSpace("viewer");
     xrHitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
 
-    // Auto-load any graffiti placed near the user's current GPS position,
-    // then keep polling every 8 seconds as the user walks around.
     loadNearbyGraffiti();
     nearbyInterval = setInterval(loadNearbyGraffiti, 8000);
 
-    xrSession.addEventListener("select", () => {
-      if (lastHitPose) placeDrawingAtHit(lastHitPose);
+    xrSession.addEventListener("select", (ev) => {
+      if (lastHitPose) {
+        // Pass the frame from the select event for anchor creation
+        placeDrawingAtHit(lastHitPose, ev.frame || lastHitFrame);
+      }
     });
+
+    // Wire up undo button
+    const undoBtn = document.getElementById("ar-undo-btn");
+    if (undoBtn) undoBtn.addEventListener("click", (e) => { e.stopPropagation(); undoLastPiece(); });
 
     xrSession.addEventListener("end", () => {
       clearInterval(nearbyInterval);
       nearbyInterval = null;
+      // Clean up all anchors
+      for (const piece of placedPieces) {
+        if (piece.anchor) try { piece.anchor.delete(); } catch(e) {}
+      }
       arOverlay.style.display = "none";
       document.getElementById("draw-toolbar").style.display = "flex";
       document.getElementById("canvas").style.display = "block";
-      if (previewMesh) { previewMesh.visible = false; previewMesh.material.map = null; }
+      previewTexture = null;
+      previewMatrix = null;
+      reticleMatrix = null;
+      anchorsSupported = false;
       xrSession = null;
+      gl = null;
+      appState = "DRAW";
     });
 
-    renderer.setAnimationLoop((timestamp, frame) => {
-      if (!frame) return;
-      const hitResults = frame.getHitTestResults(xrHitTestSource);
-      if (hitResults.length > 0) {
-        const hit = hitResults[0];
-        lastHitPose = hit.getPose(xrRefSpace);
-        reticleModel.visible = true;
-        updatePreviewMesh(lastHitPose);
-
-        const hitQ = new THREE.Quaternion(lastHitPose.transform.orientation.x, lastHitPose.transform.orientation.y, lastHitPose.transform.orientation.z, lastHitPose.transform.orientation.w);
-        const rawHitNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(hitQ);
-        const mode = document.getElementById("ar-surface-mode")?.value || "auto";
-        let hitNormal = rawHitNormal.clone();
-        let hitSurface = "floor";
-        const hitPos = new THREE.Vector3(lastHitPose.transform.position.x, lastHitPose.transform.position.y, lastHitPose.transform.position.z);
-
-        if (mode === "auto") {
-          hitSurface = Math.abs(hitNormal.y) < 0.707 ? "wall" : (hitNormal.y < -0.707 ? "ceiling" : "floor");
-          reticleModel.matrix.fromArray(lastHitPose.transform.matrix);
-        } else if (mode === "wall") {
-          hitSurface = "wall";
-          const camPos = new THREE.Vector3();
-          camera.getWorldPosition(camPos);
-          hitNormal.copy(camPos).sub(hitPos);
-          hitNormal.y = 0;
-          if (hitNormal.lengthSq() > 0.001) hitNormal.normalize();
-          else hitNormal.set(0, 0, 1);
-          const alignQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), hitNormal);
-          reticleModel.matrix.makeRotationFromQuaternion(alignQ);
-          reticleModel.matrix.setPosition(hitPos);
-        } else if (mode === "floor") {
-          hitSurface = "floor";
-          hitNormal.set(0, 1, 0);
-          const alignQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), hitNormal);
-          reticleModel.matrix.makeRotationFromQuaternion(alignQ);
-          reticleModel.matrix.setPosition(hitPos);
-        }
-
-        const debugColors = { wall: 0xff3333, floor: 0x33ff33, ceiling: 0x33ccff };
-        const col = debugColors[hitSurface] || 0xffffff;
-        reticleModel.material.color.setHex(col);
-
-        if (debugNormalArrow) {
-          debugNormalArrow.position.copy(hitPos);
-          debugNormalArrow.setDirection(hitNormal);
-          debugNormalArrow.setColor(new THREE.Color(col));
-          debugNormalArrow.visible = true;
-        }
-        if (debugPlane) {
-          debugPlane.matrix.copy(reticleModel.matrix);
-          debugPlane.material.color.setHex(col);
-          debugPlane.visible = true;
-        }
-        arStatus.textContent = "[" + hitSurface.toUpperCase() + (mode !== "auto" ? " OVERRIDE" : "") + "] - tap to place!";
-      } else {
-        reticleModel.visible = false;
-        if (debugNormalArrow) debugNormalArrow.visible = false;
-        if (debugPlane) debugPlane.visible = false;
-        if (previewMesh) previewMesh.visible = false;
-        lastHitPose = null;
-        arStatus.textContent = "Scanning...";
-      }
-      renderer.render(scene, camera);
-    });
+    // Start the XR frame loop
+    xrSession.requestAnimationFrame(onXRFrame);
 
   } catch (err) {
     console.error(err);
@@ -856,16 +975,12 @@ window.addEventListener("deviceorientation", (e) => {
 });
 
 document.getElementById("ar-share-btn").addEventListener("click", async () => {
-  if (userLat === null || userLng === null) {
-    alert("Determining location...");
-    return;
-  }
+  if (userLat === null || userLng === null) { alert("Determining location..."); return; }
   const imageData = canvas.toDataURL("image/png");
   const description = document.getElementById("ar-description").value.trim();
 
   if (lastPlacedX === undefined || arStartLat === null || arStartLng === null) {
-    alert("Place graffiti on a surface first!");
-    return;
+    alert("Place graffiti on a surface first!"); return;
   }
 
   const bRad = arStartBearing * Math.PI / 180;
@@ -873,7 +988,6 @@ document.getElementById("ar-share-btn").addEventListener("click", async () => {
   const northMeters = -lastPlacedX * Math.sin(bRad) - lastPlacedZ * Math.cos(bRad);
   const metersPerDegLat = 111320;
   const metersPerDegLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
-
   const graffitiLat = arStartLat + (northMeters / metersPerDegLat);
   const graffitiLng = arStartLng + (eastMeters / metersPerDegLng);
 
@@ -883,7 +997,7 @@ document.getElementById("ar-share-btn").addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         lat: graffitiLat, lng: graffitiLng, image: imageData, scale: arScaleCm,
-        bearing: arStartBearing, description: description, height: lastPlacedHeight,
+        bearing: arStartBearing, description, height: lastPlacedHeight,
         surfaceType: lastPlacedSurfaceType, quaternion: lastPlacedQuaternion
       })
     });
@@ -897,101 +1011,76 @@ document.getElementById("ar-share-btn").addEventListener("click", async () => {
 document.getElementById("ar-load-btn").addEventListener("click", () => loadNearbyGraffiti());
 
 async function loadNearbyGraffiti() {
-  // Must have an active AR scene and known GPS anchor point
-  if (!scene || arStartLat === null || arStartLng === null) {
-    console.log("loadNearby: skipped — scene:", !!scene, "arStartLat:", arStartLat, "arStartLng:", arStartLng);
-    return;
-  }
-  if (userLat === null || userLng === null) {
-    console.log("loadNearby: skipped — no user GPS");
-    return;
-  }
+  if (!gl || arStartLat === null || arStartLng === null) return;
+  if (userLat === null || userLng === null) return;
 
   try {
     const resp = await fetch(`/api/graffiti/nearby?lat=${userLat}&lng=${userLng}&radius=200`);
     if (!resp.ok) return;
     const items = await resp.json();
-    console.log("loadNearby: got", items.length, "items");
 
     const mLat = 111320;
     const mLng = 111320 * Math.cos(arStartLat * Math.PI / 180);
     const bRad = arStartBearing * Math.PI / 180;
     let loaded = 0;
+    const existingIds = new Set(placedPieces.filter(p => p.id).map(p => p.id));
 
     for (const item of items) {
-      // Skip pieces already in the scene
-      if (scene.getObjectByName("global_" + item.id)) continue;
-
-      const { image, scale, bearing, height, surfaceType, quaternion, id } = item;
+      if (existingIds.has("global_" + item.id)) continue;
 
       const img = new Image();
       img.crossOrigin = "anonymous";
-      img.src = image;
-      try {
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-        });
-      } catch (e) {
-        console.warn("Failed to load image for graffiti", id, e);
-        continue;
-      }
+      img.src = item.image;
+      try { await new Promise((ok, fail) => { img.onload = ok; img.onerror = fail; }); }
+      catch (e) { continue; }
 
-      // CanvasTexture handles power-of-two scaling automatically
-      const tex = new THREE.CanvasTexture(img);
-
+      const tex = createTexture(img);
       const aspect = img.width / img.height;
-      const planeWidth = (scale || 50) / 100;
-      const planeHeight = planeWidth / aspect;
+      const scale = item.scale || 50;
+      const w = scale / 100;
+      const h = w / aspect;
+      const height = item.height || 1.5;
 
-      const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(planeWidth, planeHeight),
-        new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: true, depthWrite: false })
-      );
-      mesh.name = "global_" + id;
-
-      // --- Position: convert saved GPS back into viewer's XR local space ---
-      // The saved lat/lng is the real-world point where the graffiti sits.
-      // arStartLat/Lng is where THIS viewer began their XR session (origin = 0,0,0).
-      // We convert the GPS delta to a north/east offset in metres, then rotate
-      // into the viewer's local XR frame using their starting compass bearing.
-      const nM = (item.lat - arStartLat) * mLat;    // metres northward
-      const eM = (item.lng - arStartLng) * mLng;    // metres eastward
-      // Viewer XR frame: +X = right (bearing+90), -Z = forward (bearing)
+      // Convert saved GPS position to XR local space
+      const nM = (item.lat - arStartLat) * mLat;
+      const eM = (item.lng - arStartLng) * mLng;
       const sX = eM * Math.cos(bRad) - nM * Math.sin(bRad);
       const sZ = -eM * Math.sin(bRad) - nM * Math.cos(bRad);
-      mesh.position.set(sX, height || 1.5, sZ);
+      const pos = [sX, height, sZ];
 
-      // --- Orientation: restore saved quaternion then compensate for the
-      //     difference between creator's and viewer's XR reference frames.
-      //     Both frames share Y-up; they differ only by a Y-rotation equal
-      //     to (creatorBearing - viewerBearing). ---
-      if (quaternion && quaternion.length === 4) {
-        mesh.quaternion.set(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
-        const frameDelta = ((bearing || 0) - arStartBearing) * Math.PI / 180;
-        mesh.quaternion.premultiply(
-          new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), frameDelta)
-        );
+      let modelMatrix;
+      if (item.quaternion && item.quaternion.length === 4) {
+        // Reconstruct orientation from saved quaternion
+        const q = item.quaternion;
+        const frameDelta = ((item.bearing || 0) - arStartBearing) * Math.PI / 180;
+        // Build rotation matrix from quaternion
+        const qm = quatToMat4(q);
+        // Apply frame delta rotation around Y
+        const ym = mat4RotateAxis(mat4Identity(), [0, 1, 0], frameDelta);
+        const rotated = mat4Multiply(ym, qm);
+        // Apply scale to X (width) and Y (height) columns
+        modelMatrix = new Float32Array(rotated);
+        modelMatrix[0] *= w; modelMatrix[1] *= w; modelMatrix[2] *= w;
+        modelMatrix[4] *= h; modelMatrix[5] *= h; modelMatrix[6] *= h;
+        modelMatrix[12] = pos[0]; modelMatrix[13] = pos[1]; modelMatrix[14] = pos[2];
       } else {
-        // Fallback for legacy records without a quaternion
-        mesh.rotation.y = ((bearing || 0) - arStartBearing) * Math.PI / 180;
-        if (surfaceType === "floor") mesh.rotation.x = -Math.PI / 2;
+        // Legacy fallback: face bearing direction
+        const yaw = ((item.bearing || 0) - arStartBearing) * Math.PI / 180;
+        const right = [Math.cos(yaw) * w, 0, -Math.sin(yaw) * w];
+        const up = item.surfaceType === "floor" ? [0, 0, h] : [0, h, 0];
+        const normal = item.surfaceType === "floor" ? [0, 1, 0]
+          : [Math.sin(yaw), 0, Math.cos(yaw)];
+        modelMatrix = mat4FromCols(right, up, normal, pos);
       }
 
-      mesh.updateMatrixWorld();
-      mesh.matrixAutoUpdate = false;
-      scene.add(mesh);
+      placedPieces.push({ modelMatrix, texture: tex, id: "global_" + item.id });
       loaded++;
     }
 
     if (gpsStatus) {
-      if (items.length === 0) {
-        gpsStatus.textContent = "No graffiti nearby (0 from server)";
-      } else if (loaded > 0) {
-        gpsStatus.textContent = `🎨 ${loaded} piece${loaded > 1 ? "s" : ""} loaded nearby`;
-      } else {
-        gpsStatus.textContent = `${items.length} found but already loaded`;
-      }
+      if (items.length === 0) gpsStatus.textContent = "No graffiti nearby";
+      else if (loaded > 0) gpsStatus.textContent = `🎨 ${loaded} piece${loaded > 1 ? "s" : ""} loaded`;
+      else gpsStatus.textContent = `${items.length} found, already loaded`;
     }
   } catch (err) {
     console.error("loadNearbyGraffiti:", err);
@@ -999,31 +1088,32 @@ async function loadNearbyGraffiti() {
   }
 }
 
+// Build rotation matrix from quaternion [x,y,z,w]
+function quatToMat4(q) {
+  const [x, y, z, w] = q;
+  const x2 = x+x, y2 = y+y, z2 = z+z;
+  const xx = x*x2, xy = x*y2, xz = x*z2;
+  const yy = y*y2, yz = y*z2, zz = z*z2;
+  const wx = w*x2, wy = w*y2, wz = w*z2;
+  return new Float32Array([
+    1-yy-zz, xy+wz,   xz-wy,   0,
+    xy-wz,   1-xx-zz, yz+wx,   0,
+    xz+wy,   yz-wx,   1-xx-yy, 0,
+    0,        0,        0,        1
+  ]);
+}
+
 // ===================== DEBUGGING =====================
 const debugElem = document.getElementById("debug-info");
-
 function updateDebugInfo() {
   if (!debugElem) return;
-  debugElem.innerHTML = `
-    <strong>Debug Info:</strong><br>
-    AR Session: ${xrSession ? "Active" : "Inactive"}<br>
-    Last Hit Pose: ${JSON.stringify(lastHitPose, null, 2)}<br>
-    Placed X: ${lastPlacedX}<br>
-    Placed Z: ${lastPlacedZ}<br>
-    Scale CM: ${arScaleCm}<br>
-    Bearing: ${arStartBearing}<br>
-    Latitude: ${arStartLat}<br>
-    Longitude: ${arStartLng}<br>
-    User Bearing: ${userBearing}<br>
-    `;
+  const anchored = placedPieces.filter(p => p.anchor).length;
+  debugElem.innerHTML =
+    `<b>v${APP_VERSION} WebGL2</b><br>` +
+    `AR: ${xrSession ? "Active" : "Off"} | Pieces: ${placedPieces.length} (⚓${anchored})<br>` +
+    `Anchors API: ${anchorsSupported ? "✅" : "❌"}<br>` +
+    `Scale: ${arScaleCm}cm | Rot: ${arRotationDeg}°<br>` +
+    `GPS: ${userLat?.toFixed(5) || "?"}, ${userLng?.toFixed(5) || "?"}<br>` +
+    `Bearing: ${userBearing.toFixed(0)}°`;
 }
 setInterval(updateDebugInfo, 1000);
-
-// ===================== SERVICE WORKER =====================
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js")
-      .then((reg) => console.log("Service Worker registered:", reg))
-      .catch((err) => console.warn("Service Worker registration failed:", err));
-  });
-}
