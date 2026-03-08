@@ -1,15 +1,9 @@
-# Wall Graffiti AR
+# Doodle Noodle AR
 
-A Flask-based web app that lets you draw graffiti and place it on real-world surfaces using AR (WebXR) or a camera fallback.
+A Flask-based web app that lets you draw doodles and place them on real-world surfaces using AR (WebXR) or a camera fallback.
 
 ## Features
 
-- **Drawing canvas** — pen, eraser, adjustable brush size, save to PNG
-- **AR placement (WebXR)** — point at a wall/floor and tap to place your drawing in 3D space
-- **Address tagging** — graffiti posts are tagged with the real-world address using reverse geocoding (OpenStreetMap Nominatim)
-- **Community display** — see the actual address where each graffiti was placed
-- **Fallback mode** — camera overlay for devices without WebXR (iOS, etc.)
-- **Phone camera stream** — `trust.py` streams video from a phone's IP camera via OpenCV
 
 ## Project Structure
 
@@ -34,7 +28,6 @@ python app.py
 ```
 
 Open **http://127.0.0.1:5500** in your browser.
-
 
 ### AR Rendering: WebGL2
 
