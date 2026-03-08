@@ -168,6 +168,7 @@ def save_graffiti():
         "surfaceType": surface_type,
         "quaternion": quaternion,
         "description": data.get("description", "")[:500],
+        "address": data.get("address", "Unknown address"),
         "author": session.get("user", {}).get("name", "Anonymous"),
         "author_pic": session.get("user", {}).get("picture", ""),
         "likes": [],
