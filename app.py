@@ -54,14 +54,6 @@ else:
     print("⚠️  No MONGODB_URI set in .env — global graffiti disabled.")
 
 
-@app.after_request
-def no_cache(response):
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
-
-
 @app.route("/")
 def home():
     if session.get("user"):
@@ -120,9 +112,7 @@ def dashboard():
         return redirect(url_for("login"))
     drawings = []
     if graffiti_col is not None:
-        cursor = graffiti_col.find(
-            {"author": user.get("name", "")}
-        ).sort("created", -1)
+        cursor = graffiti_col.find().sort("created", -1)
         for doc in cursor:
             drawings.append({
                 "id": str(doc["_id"]),
@@ -203,7 +193,7 @@ def get_nearby_graffiti():
             "id": str(doc["_id"]),
             "lat": doc["location"]["coordinates"][1],
             "lng": doc["location"]["coordinates"][0],
-            "image": doc["image"],
+            "image": doc.get("image", ""),
             "scale": doc.get("scale", 50),
             "bearing": doc.get("bearing", 0),
             "height": doc.get("height", 1.5),
@@ -302,6 +292,34 @@ def add_comment(graffiti_id):
     except Exception:
         return jsonify({"error": "Invalid ID"}), 400
     return jsonify({"ok": True, "comment": comment}), 201
+
+
+@app.route("/community")
+def community():
+    user = session.get("user")
+    artworks = []
+    if graffiti_col is not None:
+        cursor = graffiti_col.find().sort("created", -1)
+        for doc in cursor:
+            lat, lng = None, None
+            if doc.get("location") and "coordinates" in doc["location"]:
+                lng, lat = doc["location"]["coordinates"]
+            artworks.append({
+                "id": str(doc["_id"]),
+                "image": doc.get("image", ""),
+                "description": doc.get("description", "Untitled"),
+                "created": doc.get("created", ""),
+                "author": doc.get("author", "Anonymous"),
+                "lat": lat,
+                "lng": lng,
+            })
+    return render_template("community.html", user=user, artworks=artworks)
+
+
+@app.route("/global")
+def global_page():
+    user = session.get("user")
+    return render_template("global.html", user=user)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Community Art – DoodleNoodle</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{
+      width:100%;height:100%;
+      font-family:'Comic Sans MS','Comic Sans',cursive;
+      background:#c8a87a url("{{ url_for('static',filename='assets/white-crumpled-paper-texture-background.png') }}") center/cover no-repeat fixed;
+    }
+    body::before{
+      content:'';position:fixed;inset:0;
+      background:rgba(195,165,120,0.55);
+      pointer-events:none;z-index:0;
+    }
+    .page{
+      position:relative;z-index:1;
+      min-height:100vh;
+      display:flex;flex-direction:column;
+      padding:0 0 80px;
+    }
+    .top-label{
+      font-size:13px;color:rgba(90,70,45,0.5);
+      position:absolute;top:6px;left:12px;
+    }
+    .art-panel{
+      margin:24px 12px 0;
+      background:rgba(255,250,240,0.88);
+      border-radius:14px;
+      padding:18px 16px 12px;
+      flex:1;
+      box-shadow:0 2px 10px rgba(0,0,0,0.08);
+    }
+    .art-panel h2{
+      font-size:1.3rem;
+      font-weight:700;
+      color:#222;
+      margin-bottom:14px;
+    }
+    .art-list{
+      display:flex;flex-direction:column;
+      gap:18px;
+    }
+    .art-item{
+      display:flex;align-items:center;gap:18px;
+      text-decoration:none;color:#222;
+      background:rgba(255,255,255,0.85);
+      border-radius:10px;
+      box-shadow:0 1px 6px rgba(0,0,0,0.07);
+      padding:12px 16px;
+    }
+    .art-thumb{
+      width:96px;height:96px;
+      border:2px solid #222;
+      border-radius:8px;
+      background:#fff;
+      object-fit:cover;
+      flex-shrink:0;
+    }
+    .art-info{
+      display:flex;flex-direction:column;
+      gap:4px;
+    }
+    .art-title{
+      font-size:1.1rem;font-weight:700;
+    }
+    .art-meta{
+      font-size:0.85rem;color:#666;
+    }
+    .art-author{
+      font-size:0.9rem;color:#a08050;font-weight:600;
+    }
+    .empty-state{
+      text-align:center;
+      color:#888;
+      padding:40px 0;
+      font-size:1rem;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="top-label">
+    <a href="{{ url_for('dashboard') }}" style="text-decoration:none;color:#d4a23a;font-size:1.6rem;margin-right:10px;vertical-align:middle;">&#8592;</a>
+    Community Art
+  </div>
+  <div class="art-panel">
+    <h2>All Artworks</h2>
+    {% if artworks %}
+      <div class="art-list">
+        {% for art in artworks %}
+          <a class="art-item" href="{{ url_for('graffiti_detail', graffiti_id=art.id) }}">
+            <img class="art-thumb" src="{{ art.image }}" alt="">
+            <div class="art-info">
+              <span class="art-title">{{ art.description or 'Untitled' }}</span>
+              <span class="art-meta">{{ art.created.strftime('%b %d, %Y') if art.created else '' }}</span>
+              <span class="art-author">by {{ art.author or 'Anonymous' }}</span>
+              {% if art.lat and art.lng %}
+                <span class="art-meta">Lat: {{ art.lat }}, Lng: {{ art.lng }}</span>
+              {% endif %}
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">No art yet — be the first!</div>
+    {% endif %}
+  </div>
+</div>
+</body>
+</html>

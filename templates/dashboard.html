@@ -162,6 +162,7 @@
     }
     .tab-inactive{
       background:#5cd6c8;color:#fff;
+      width: fit-content;padding:10px 16px;
     }
   </style>
 </head>
@@ -184,8 +185,8 @@
 
   <!-- Quick action buttons -->
   <div class="quick-actions">
-    <a href="{{ url_for('create_post') }}" class="btn-new">new drawing</a>
-    <a href="{{ url_for('app_page') }}" class="btn-view">view area</a>
+    <a href="{{ url_for('app_page') }}" class="btn-new">new drawing</a>
+    <a href="{{ url_for('global_page') }}" class="btn-view">view area</a>
   </div>
 
   <!-- My drawings list -->
@@ -213,8 +214,7 @@
 
 <!-- Bottom tab bar -->
 <div class="tab-bar">
-  <a href="{{ url_for('dashboard') }}" class="tab tab-active">my drawings</a>
-  <a href="{{ url_for('app_page') }}" class="tab tab-inactive">community</a>
+  <a href="{{ url_for('community') }}" class="tab tab-inactive">community</a>
 </div>
 
 </body>
