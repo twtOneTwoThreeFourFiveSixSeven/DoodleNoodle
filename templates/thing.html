@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Wall Graffiti AR</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css.css') }}">
+
+  <!-- Three.js for 3D rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+</head>
+
+<body>
+
+  <!-- Drawing mode -->
+  <div class="toolbar" id="draw-toolbar">
+    <div class="user-bar">
+      {% if user and user.picture %}
+      <img src="{{ user.picture }}" alt="" class="user-avatar">
+      {% endif %}
+      <span class="user-name">{{ user.name or user.email or 'Guest' }}</span>
+      <a href="{{ url_for('logout') }}" class="toolbar-link">Logout</a>
+      <a href="{{ url_for('home') }}" class="toolbar-link">Home</a>
+    </div>
+    <button id="pen-btn" class="active">✏️ Pen</button>
+    <button id="eraser-btn">🧹 Eraser</button>
+    <label>Size: <input type="range" id="size-slider" min="1" max="50" value="4"></label>
+    <span id="size-label" style="color:white;">4</span>
+    <input type="color" id="color-picker" value="#000000" title="Pick a color">
+    <input type="text" id="hex-input" value="#000000" maxlength="7" placeholder="#000000">
+    <button id="img-btn">🖼️ Insert Image</button>
+    <input type="file" id="img-upload" accept="image/png,image/jpeg" style="display:none;">
+    <button id="clear-btn">🗑️ Clear</button>
+    <button id="save-btn">💾 Save</button>
+    <button id="ar-btn">📸 Place on Wall</button>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="crosshair">
+    <div class="crosshair-h"></div>
+    <div class="crosshair-v"></div>
+  </div>
+
+  <!-- Static Image Placement Overlay -->
+  <div id="place-overlay">
+    <div id="place-controls-bar">
+      <label class="place-ctrl-label">
+        Scale: <input type="range" id="place-scale-slider" class="place-input-range" min="10" max="400" value="100">
+        <span id="place-scale-label" class="place-ctrl-val">100%</span>
+      </label>
+      <label class="place-ctrl-label">
+        Rotate: <input type="range" id="place-rotate-slider" class="place-input-range" min="0" max="360" value="0">
+        <span id="place-rotate-label" class="place-ctrl-val">0°</span>
+      </label>
+    </div>
+    <button id="place-stamp-btn" class="place-btn">✅ Stamp</button>
+    <button id="place-cancel-btn" class="place-btn">❌ Cancel</button>
+  </div>
+
+  <!-- AR overlay -->
+  <div id="ar-overlay">
+    <div id="ar-version"
+      style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.5);color:#0f0;padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace;z-index:100;">
+      v2.1</div>
+    <div id="ar-status">Point at a wall and tap to place your drawing</div>
+    <div class="reticle-hint" id="reticle"></div>
+
+    <div id="ar-top-controls">
+      <div id="ar-surface-control"
+        style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:4px;">
+        <label for="ar-surface-mode"
+          style="color:white;font-size:14px;text-shadow:0 0 4px black;font-weight:bold;">Surface:</label>
+        <select id="ar-surface-mode"
+          style="padding:6px 12px;border-radius:6px;border:none;font-size:14px;background:rgba(255,255,255,0.95);color:#222;font-weight:bold;cursor:pointer;">
+          <option value="auto">Auto-Detect</option>
+          <option value="wall">Force Wall</option>
+          <option value="floor">Force Floor</option>
+          <option value="ceiling">Force Ceiling</option>
+        </select>
+      </div>
+      <div id="ar-action-bar">
+        <input type="text" id="ar-description" placeholder="Describe your graffiti..." maxlength="500">
+        <button id="ar-share-btn">Confirm All Updates</button>
+        <button id="ar-load-btn">📡 Load Nearby</button>
+      </div>
+      <div id="ar-gps-status"></div>
+      <button id="ar-exit-btn">← Back to Draw</button>
+    </div>
+
+  </div>
+
+  <script src="{{ url_for('static', filename='javascript_thing.js', v='2.0') }}"></script>
+</body>
+
+</html>
