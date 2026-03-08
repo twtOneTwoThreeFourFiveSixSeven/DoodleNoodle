@@ -173,7 +173,7 @@ def save_graffiti():
         "author_pic": session.get("user", {}).get("picture", ""),
         "likes": [],
         "comments": [],
-        "created": datetime.now(ZoneInfo("America/Toronto"))
+        "created": datetime.now(ZoneInfo("America/New_York"))
     }
 
     result = graffiti_col.insert_one(doc)
