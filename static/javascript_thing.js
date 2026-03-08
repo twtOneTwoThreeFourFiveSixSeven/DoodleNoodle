@@ -399,41 +399,41 @@ let uViewProjection, uModel, uOpacity, uMode, uColor;
 
 // ---- 4x4 MATRIX UTILITIES (column-major for WebGL) ----
 function mat4Identity() {
-  return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+  return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 }
 function mat4Multiply(a, b) {
   const o = new Float32Array(16);
   for (let i = 0; i < 4; i++)
     for (let j = 0; j < 4; j++)
-      o[j*4+i] = a[i]*b[j*4] + a[4+i]*b[j*4+1] + a[8+i]*b[j*4+2] + a[12+i]*b[j*4+3];
+      o[j * 4 + i] = a[i] * b[j * 4] + a[4 + i] * b[j * 4 + 1] + a[8 + i] * b[j * 4 + 2] + a[12 + i] * b[j * 4 + 3];
   return o;
 }
 function mat4FromCols(x, y, z, p) {
-  return new Float32Array([x[0],x[1],x[2],0, y[0],y[1],y[2],0, z[0],z[1],z[2],0, p[0],p[1],p[2],1]);
+  return new Float32Array([x[0], x[1], x[2], 0, y[0], y[1], y[2], 0, z[0], z[1], z[2], 0, p[0], p[1], p[2], 1]);
 }
 function mat4RotateAxis(m, axis, rad) {
   const c = Math.cos(rad), s = Math.sin(rad), t = 1 - c;
   const [x, y, z] = axis;
   const r = new Float32Array([
-    t*x*x+c,   t*x*y+s*z, t*x*z-s*y, 0,
-    t*x*y-s*z, t*y*y+c,   t*y*z+s*x, 0,
-    t*x*z+s*y, t*y*z-s*x, t*z*z+c,   0,
-    0,0,0,1
+    t * x * x + c, t * x * y + s * z, t * x * z - s * y, 0,
+    t * x * y - s * z, t * y * y + c, t * y * z + s * x, 0,
+    t * x * z + s * y, t * y * z - s * x, t * z * z + c, 0,
+    0, 0, 0, 1
   ]);
   return mat4Multiply(m, r);
 }
 
 // ---- VECTOR UTILITIES ----
-function v3Dot(a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
-function v3Cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
-function v3Sub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
-function v3Add(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
-function v3Scale(v, s) { return [v[0]*s, v[1]*s, v[2]*s]; }
+function v3Dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function v3Cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function v3Sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function v3Add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function v3Scale(v, s) { return [v[0] * s, v[1] * s, v[2] * s]; }
 function v3Norm(v) {
-  const l = Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
-  return l > 1e-6 ? [v[0]/l, v[1]/l, v[2]/l] : [0,0,0];
+  const l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+  return l > 1e-6 ? [v[0] / l, v[1] / l, v[2] / l] : [0, 0, 0];
 }
-function v3Len(v) { return Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); }
+function v3Len(v) { return Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
 
 // ---- GLSL SHADERS (WebGL2 / GLSL 300 es) ----
 const VERT_SRC = `#version 300 es
@@ -498,20 +498,20 @@ function initWebGL2() {
 
   // Uniform locations
   uViewProjection = gl.getUniformLocation(shaderProgram, "u_vp");
-  uModel          = gl.getUniformLocation(shaderProgram, "u_model");
-  uOpacity        = gl.getUniformLocation(shaderProgram, "u_opacity");
-  uMode           = gl.getUniformLocation(shaderProgram, "u_mode");
-  uColor          = gl.getUniformLocation(shaderProgram, "u_color");
+  uModel = gl.getUniformLocation(shaderProgram, "u_model");
+  uOpacity = gl.getUniformLocation(shaderProgram, "u_opacity");
+  uMode = gl.getUniformLocation(shaderProgram, "u_mode");
+  uColor = gl.getUniformLocation(shaderProgram, "u_color");
 
   // Shared quad VAO: XY plane, -0.5..0.5, with UVs
   const verts = new Float32Array([
     // pos (x,y)   uv (u,v)
-    -0.5, -0.5,    0, 1,
-     0.5, -0.5,    1, 1,
-     0.5,  0.5,    1, 0,
-     0.5,  0.5,    1, 0,
-    -0.5,  0.5,    0, 0,
-    -0.5, -0.5,    0, 1,
+    -0.5, -0.5, 0, 1,
+    0.5, -0.5, 1, 1,
+    0.5, 0.5, 1, 0,
+    0.5, 0.5, 1, 0,
+    -0.5, 0.5, 0, 0,
+    -0.5, -0.5, 0, 1,
   ]);
   quadVAO = gl.createVertexArray();
   gl.bindVertexArray(quadVAO);
@@ -520,7 +520,7 @@ function initWebGL2() {
   gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
 
   const aPos = gl.getAttribLocation(shaderProgram, "a_pos");
-  const aUV  = gl.getAttribLocation(shaderProgram, "a_uv");
+  const aUV = gl.getAttribLocation(shaderProgram, "a_uv");
   gl.enableVertexAttribArray(aPos);
   gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 16, 0);
   gl.enableVertexAttribArray(aUV);
@@ -873,8 +873,8 @@ function onXRFrame(time, frame) {
       gl.uniform1i(uMode, 1);
       gl.uniformMatrix4fv(uModel, false, reticleMatrix);
       gl.uniform1f(uOpacity, 0.9);
-      const surfColors = { wall: [1,0.2,0.2], floor: [0.2,1,0.2], ceiling: [0.2,0.8,1] };
-      gl.uniform3fv(uColor, surfColors[hitSurface] || [1,1,1]);
+      const surfColors = { wall: [1, 0.2, 0.2], floor: [0.2, 1, 0.2], ceiling: [0.2, 0.8, 1] };
+      gl.uniform3fv(uColor, surfColors[hitSurface] || [1, 1, 1]);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
@@ -954,10 +954,22 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
       });
     }
 
-    // Prevent AR overlay from triggering placement on pointer/touch events
+    // Prevent AR overlay from triggering placement on pointer/touch events.
+    // Calling preventDefault() on background taps stops the browser from
+    // synthesising a click event after touchend, which was accidentally
+    // reaching the place button. Taps on actual UI controls are left alone.
     if (arOverlay) {
-      arOverlay.addEventListener("pointerdown", (e) => e.stopPropagation());
-      arOverlay.addEventListener("touchstart", (e) => e.stopPropagation());
+      const isUITarget = (el) =>
+        el.tagName === "BUTTON" || el.tagName === "INPUT" ||
+        el.tagName === "SELECT" || el.closest("button, input, select");
+      arOverlay.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        if (!isUITarget(e.target)) e.preventDefault();
+      });
+      arOverlay.addEventListener("touchstart", (e) => {
+        e.stopPropagation();
+        if (!isUITarget(e.target)) e.preventDefault();
+      }, { passive: false });
       arOverlay.addEventListener("click", (e) => e.stopPropagation());
     }
 
@@ -970,7 +982,7 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
       nearbyInterval = null;
       // Clean up all anchors
       for (const piece of placedPieces) {
-        if (piece.anchor) try { piece.anchor.delete(); } catch(e) {}
+        if (piece.anchor) try { piece.anchor.delete(); } catch (e) { }
       }
       arOverlay.style.display = "none";
       document.getElementById("draw-toolbar").style.display = "flex";
@@ -1136,15 +1148,15 @@ async function loadNearbyGraffiti() {
 // Build rotation matrix from quaternion [x,y,z,w]
 function quatToMat4(q) {
   const [x, y, z, w] = q;
-  const x2 = x+x, y2 = y+y, z2 = z+z;
-  const xx = x*x2, xy = x*y2, xz = x*z2;
-  const yy = y*y2, yz = y*z2, zz = z*z2;
-  const wx = w*x2, wy = w*y2, wz = w*z2;
+  const x2 = x + x, y2 = y + y, z2 = z + z;
+  const xx = x * x2, xy = x * y2, xz = x * z2;
+  const yy = y * y2, yz = y * z2, zz = z * z2;
+  const wx = w * x2, wy = w * y2, wz = w * z2;
   return new Float32Array([
-    1-yy-zz, xy+wz,   xz-wy,   0,
-    xy-wz,   1-xx-zz, yz+wx,   0,
-    xz+wy,   yz-wx,   1-xx-yy, 0,
-    0,        0,        0,        1
+    1 - yy - zz, xy + wz, xz - wy, 0,
+    xy - wz, 1 - xx - zz, yz + wx, 0,
+    xz + wy, yz - wx, 1 - xx - yy, 0,
+    0, 0, 0, 1
   ]);
 }
 
