@@ -33,6 +33,7 @@ ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 let drawing = false, erasing = false, brushSize = 4;
 let currentColor = "#000000";
+let appState = "DRAW"; // States: DRAW, IMAGE_PLACE, AR
 let placingImage = null; // image being positioned before commit
 
 function getPos(e) {
@@ -100,8 +101,16 @@ if (hexInput) {
 }
 
 // ===================== IMAGE INSERT =====================
+// ===================== IMAGE INSERT =====================
 const imgBtn = document.getElementById("img-btn");
 const imgUpload = document.getElementById("img-upload");
+const placeOverlay = document.getElementById("place-overlay");
+const placeScaleSlider = document.getElementById("place-scale-slider");
+const placeScaleValueLabel = document.getElementById("place-scale-label");
+const placeRotateSlider = document.getElementById("place-rotate-slider");
+const placeRotateValueLabel = document.getElementById("place-rotate-label");
+const placeStampBtn = document.getElementById("place-stamp-btn");
+const placeCancelBtn = document.getElementById("place-cancel-btn");
 
 if (imgBtn && imgUpload) {
   imgBtn.addEventListener("click", () => imgUpload.click());
@@ -119,14 +128,20 @@ if (imgBtn && imgUpload) {
         if (h > maxH) { w *= maxH / h; h = maxH; }
         placingImage = {
           img, w, h,
-          originalW: w, originalH: h,  // store original fitted size
-          prevW: w, prevH: h,          // track previous size for re-centering
+          originalW: w, originalH: h,
+          prevW: w, prevH: h,
           x: (canvas.width - w) / 2,
           y: (canvas.height - h) / 2,
           dragging: false,
           rotation: 0
         };
-        renderPlacingImage();
+        appState = "IMAGE_PLACE";
+        if (placeOverlay) placeOverlay.style.display = "block";
+        if (placeScaleSlider) placeScaleSlider.value = 100;
+        if (placeScaleValueLabel) placeScaleValueLabel.textContent = "100%";
+        if (placeRotateSlider) placeRotateSlider.value = 0;
+        if (placeRotateValueLabel) placeRotateValueLabel.textContent = "0°";
+        drawPreview();
       };
       img.src = ev.target.result;
     };
@@ -135,127 +150,102 @@ if (imgBtn && imgUpload) {
   });
 }
 
-// Overlay UI for positioning the image before stamping it
-let placeOverlay = null;
+// Global initialization of static overlay events
+if (placeOverlay) {
+  placeOverlay.addEventListener("pointerdown", (e) => {
+    if (appState !== "IMAGE_PLACE" || !placingImage) return;
+    if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
+    const p = getPos(e);
+    placingImage.dragging = true;
+    placingImage.offsetX = p.x - placingImage.x;
+    placingImage.offsetY = p.y - placingImage.y;
+    // Essential for touch handling to take over the pointer
+    placeOverlay.setPointerCapture(e.pointerId);
+  });
+  placeOverlay.addEventListener("pointermove", (e) => {
+    if (!placingImage || !placingImage.dragging) return;
+    const p = getPos(e);
+    placingImage.x = p.x - placingImage.offsetX;
+    placingImage.y = p.y - placingImage.offsetY;
+    if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
+    drawRotatedPreview();
+  });
+  placeOverlay.addEventListener("pointerup", (e) => {
+    if (placingImage) {
+      placingImage.dragging = false;
+      placeOverlay.releasePointerCapture(e.pointerId);
+    }
+  });
+  placeOverlay.addEventListener("pointercancel", (e) => {
+    if (placingImage) {
+      placingImage.dragging = false;
+      placeOverlay.releasePointerCapture(e.pointerId);
+    }
+  });
 
-function renderPlacingImage() {
-  if (!placingImage) return;
-  if (!placeOverlay) {
-    placeOverlay = document.createElement("div");
-    placeOverlay.id = "place-overlay";
-    placeOverlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;z-index:50;cursor:move;touch-action:none;";
-    const hint = document.createElement("div");
-    hint.style.cssText = "position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:white;padding:10px 20px;border-radius:8px;font-size:14px;text-align:center;";
-    hint.innerHTML = "Drag to position &bull; Use sliders to resize & rotate &bull; Click <b>Stamp</b> to place";
-    placeOverlay.appendChild(hint);
+  placeOverlay.addEventListener("wheel", (e) => {
+    if (appState !== "IMAGE_PLACE" || !placingImage) return;
+    e.preventDefault();
+    const scrollScale = e.deltaY < 0 ? 1.05 : 0.95;
+    const aspect = placingImage.w / placingImage.h;
+    const cx = placingImage.x + placingImage.w / 2;
+    const cy = placingImage.y + placingImage.h / 2;
+    placingImage.w *= scrollScale;
+    placingImage.h = placingImage.w / aspect;
+    placingImage.x = cx - placingImage.w / 2;
+    placingImage.y = cy - placingImage.h / 2;
+    placingImage.prevW = placingImage.w;
+    placingImage.prevH = placingImage.h;
 
-    // Controls bar container
-    const controlsBar = document.createElement("div");
-    controlsBar.style.cssText = "position:absolute;bottom:120px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);padding:10px 20px;border-radius:10px;display:flex;flex-direction:column;gap:10px;z-index:51;";
+    // Update slider visually too
+    if (placeScaleSlider) {
+      const currentPct = Math.round((placingImage.w / placingImage.originalW) * 100);
+      placeScaleSlider.value = currentPct;
+      if (placeScaleValueLabel) placeScaleValueLabel.textContent = currentPct + "%";
+    }
 
-    // ---- Scale slider row ----
-    const scaleRow = document.createElement("div");
-    scaleRow.style.cssText = "display:flex;align-items:center;gap:10px;";
-    const scaleLabel = document.createElement("label");
-    scaleLabel.style.cssText = "color:white;font-size:14px;display:flex;align-items:center;gap:8px;white-space:nowrap;";
-    scaleLabel.textContent = "📐 Size: ";
-    const scaleSlider = document.createElement("input");
-    scaleSlider.type = "range";
-    scaleSlider.min = "10";
-    scaleSlider.max = "300";
-    scaleSlider.value = "100";
-    scaleSlider.style.cssText = "width:150px;accent-color:#3498db;";
-    const scaleVal = document.createElement("span");
-    scaleVal.style.cssText = "color:white;font-size:14px;font-weight:bold;min-width:45px;";
-    scaleVal.textContent = "100%";
-
-    scaleSlider.addEventListener("input", () => {
-      const pct = parseInt(scaleSlider.value);
-      scaleVal.textContent = pct + "%";
-      const scaleFactor = pct / 100;
-      const aspect = placingImage.originalW / placingImage.originalH;
-      placingImage.w = placingImage.originalW * scaleFactor;
-      placingImage.h = placingImage.w / aspect;
-      // Re-center on the current center point
-      const cx = placingImage.x + placingImage.prevW / 2;
-      const cy = placingImage.y + placingImage.prevH / 2;
-      placingImage.x = cx - placingImage.w / 2;
-      placingImage.y = cy - placingImage.h / 2;
-      placingImage.prevW = placingImage.w;
-      placingImage.prevH = placingImage.h;
-      if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
-      drawRotatedPreview();
-    });
-    scaleSlider.addEventListener("mousedown", (e) => e.stopPropagation());
-    scaleSlider.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
-    scaleSlider.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: false });
-
-    scaleLabel.appendChild(scaleSlider);
-    scaleRow.appendChild(scaleLabel);
-    scaleRow.appendChild(scaleVal);
-    controlsBar.appendChild(scaleRow);
-
-    // ---- Rotation slider row ----
-    const rotateRow = document.createElement("div");
-    rotateRow.style.cssText = "display:flex;align-items:center;gap:10px;";
-    const rotateLabel = document.createElement("label");
-    rotateLabel.style.cssText = "color:white;font-size:14px;display:flex;align-items:center;gap:8px;white-space:nowrap;";
-    rotateLabel.textContent = "🔄 Rotate: ";
-    const rotateSlider = document.createElement("input");
-    rotateSlider.type = "range";
-    rotateSlider.min = "-180";
-    rotateSlider.max = "180";
-    rotateSlider.value = "0";
-    rotateSlider.style.cssText = "width:150px;accent-color:#e74c3c;";
-    const rotateDeg = document.createElement("span");
-    rotateDeg.style.cssText = "color:white;font-size:14px;font-weight:bold;min-width:40px;";
-    rotateDeg.textContent = "0°";
-
-    rotateSlider.addEventListener("input", () => {
-      placingImage.rotation = parseInt(rotateSlider.value);
-      rotateDeg.textContent = rotateSlider.value + "°";
-      if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
-      drawRotatedPreview();
-    });
-    rotateSlider.addEventListener("mousedown", (e) => e.stopPropagation());
-    rotateSlider.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
-    rotateSlider.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: false });
-
-    rotateLabel.appendChild(rotateSlider);
-    rotateRow.appendChild(rotateLabel);
-    rotateRow.appendChild(rotateDeg);
-    controlsBar.appendChild(rotateRow);
-
-    placeOverlay.appendChild(controlsBar);
-
-    const stampBtn = document.createElement("button");
-    stampBtn.textContent = "✅ Stamp";
-    stampBtn.style.cssText = "position:absolute;bottom:70px;left:50%;transform:translateX(-50%);padding:10px 24px;border:none;border-radius:6px;background:#27ae60;color:white;font-size:16px;font-weight:bold;cursor:pointer;z-index:51;";
-    stampBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); commitImage(); });
-    stampBtn.addEventListener("mousedown", (e) => e.stopPropagation());
-    stampBtn.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
-    placeOverlay.appendChild(stampBtn);
-
-    const cancelBtn = document.createElement("button");
-    cancelBtn.textContent = "❌ Cancel";
-    cancelBtn.style.cssText = "position:absolute;bottom:70px;left:calc(50% + 90px);padding:10px 24px;border:none;border-radius:6px;background:#e74c3c;color:white;font-size:16px;font-weight:bold;cursor:pointer;z-index:51;";
-    cancelBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); removePlaceOverlay(); placingImage = null; });
-    cancelBtn.addEventListener("mousedown", (e) => e.stopPropagation());
-    cancelBtn.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
-    placeOverlay.appendChild(cancelBtn);
-
-    document.body.appendChild(placeOverlay);
-
-    placeOverlay.addEventListener("mousedown", startDragImage);
-    placeOverlay.addEventListener("mousemove", dragImage);
-    placeOverlay.addEventListener("mouseup", stopDragImage);
-    placeOverlay.addEventListener("touchstart", startDragImage, { passive: false });
-    placeOverlay.addEventListener("touchmove", dragImage, { passive: false });
-    placeOverlay.addEventListener("touchend", stopDragImage);
-    placeOverlay.addEventListener("wheel", resizeImage);
-  }
-  drawPreview();
+    if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
+    drawRotatedPreview();
+  }, { passive: false });
 }
+
+if (placeScaleSlider) {
+  placeScaleSlider.addEventListener("input", () => {
+    if (!placingImage) return;
+    const pct = parseInt(placeScaleSlider.value);
+    if (placeScaleValueLabel) placeScaleValueLabel.textContent = pct + "%";
+    const scaleFactor = pct / 100;
+    const aspect = placingImage.originalW / placingImage.originalH;
+    placingImage.w = placingImage.originalW * scaleFactor;
+    placingImage.h = placingImage.w / aspect;
+    const cx = placingImage.x + placingImage.prevW / 2;
+    const cy = placingImage.y + placingImage.prevH / 2;
+    placingImage.x = cx - placingImage.w / 2;
+    placingImage.y = cy - placingImage.h / 2;
+    placingImage.prevW = placingImage.w;
+    placingImage.prevH = placingImage.h;
+    if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
+    drawRotatedPreview();
+  });
+}
+if (placeRotateSlider) {
+  placeRotateSlider.addEventListener("input", () => {
+    if (!placingImage) return;
+    placingImage.rotation = parseInt(placeRotateSlider.value);
+    if (placeRotateValueLabel) placeRotateValueLabel.textContent = placeRotateSlider.value + "°";
+    if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
+    drawRotatedPreview();
+  });
+}
+if (placeStampBtn) {
+  placeStampBtn.addEventListener("click", (e) => { e.preventDefault(); commitImage(); });
+}
+if (placeCancelBtn) {
+  placeCancelBtn.addEventListener("click", (e) => { e.preventDefault(); removePlaceOverlay(); });
+}
+
+// Overlay UI for positioning the image before stamping it
+// function renderPlacingImage() no longer needed, replaced by declarative UI toggle
 
 function drawRotatedPreview() {
   if (!placingImage) return;
@@ -279,41 +269,8 @@ function drawPreview() {
   drawRotatedPreview();
 }
 
-function startDragImage(e) {
-  if (!placingImage) return;
-  if (e.target.tagName === "BUTTON") return;
-  e.preventDefault();
-  const p = getPos(e);
-  placingImage.dragging = true;
-  placingImage.offsetX = p.x - placingImage.x;
-  placingImage.offsetY = p.y - placingImage.y;
-}
-function dragImage(e) {
-  if (!placingImage || !placingImage.dragging) return;
-  e.preventDefault();
-  const p = getPos(e);
-  placingImage.x = p.x - placingImage.offsetX;
-  placingImage.y = p.y - placingImage.offsetY;
-  if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
-  drawRotatedPreview();
-}
-function stopDragImage() { if (placingImage) placingImage.dragging = false; }
-function resizeImage(e) {
-  if (!placingImage) return;
-  e.preventDefault();
-  const scale = e.deltaY < 0 ? 1.05 : 0.95;
-  const aspect = placingImage.w / placingImage.h;
-  const cx = placingImage.x + placingImage.w / 2;
-  const cy = placingImage.y + placingImage.h / 2;
-  placingImage.w *= scale;
-  placingImage.h = placingImage.w / aspect;
-  placingImage.x = cx - placingImage.w / 2;
-  placingImage.y = cy - placingImage.h / 2;
-  placingImage.prevW = placingImage.w;
-  placingImage.prevH = placingImage.h;
-  if (placingImage.savedData) ctx.putImageData(placingImage.savedData, 0, 0);
-  drawRotatedPreview();
-}
+// function startDragImage, dragImage, stopDragImage, resizeImage replaced by global pointer listeners above
+
 
 function commitImage() {
   try {
@@ -322,7 +279,6 @@ function commitImage() {
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
 
-    // Commit with rotation
     const { img, x, y, w, h, rotation } = placingImage;
     const cx = x + w / 2;
     const cy = y + h / 2;
@@ -333,6 +289,7 @@ function commitImage() {
     ctx.restore();
 
     placingImage = null;
+    appState = "DRAW";
     removePlaceOverlay(true);
   } catch (err) {
     console.error("Error in commitImage:", err);
@@ -341,22 +298,16 @@ function commitImage() {
 }
 
 function removePlaceOverlay(committed = false) {
-  console.log("Removing place overlay");
   try {
-    if (placeOverlay) {
-      placeOverlay.remove();
-      placeOverlay = null;
-    }
+    if (placeOverlay) placeOverlay.style.display = "none";
+    appState = "DRAW";
 
-    // If we still have an active placingImage with savedData and we didn't just commit, 
-    // it means we cancelled and need to restore the canvas to its state before the preview.
     if (!committed && placingImage && placingImage.savedData) {
       ctx.putImageData(placingImage.savedData, 0, 0);
     }
+    placingImage = null;
   } catch (err) {
     console.error("Error in removePlaceOverlay:", err);
-    alert("Error in removePlaceOverlay: " + err.message);
-
   }
 }
 
@@ -734,6 +685,7 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
 
     renderer.xr.setReferenceSpaceType("local");
     await renderer.xr.setSession(xrSession);
+    appState = "AR";
 
     xrRefSpace = await xrSession.requestReferenceSpace("local");
     const viewerSpace = await xrSession.requestReferenceSpace("viewer");
@@ -756,6 +708,7 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
       document.getElementById("canvas").style.display = "block";
       if (previewMesh) { previewMesh.visible = false; previewMesh.material.map = null; }
       xrSession = null;
+      appState = "DRAW";
     });
 
     renderer.setAnimationLoop((timestamp, frame) => {
