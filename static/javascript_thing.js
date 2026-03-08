@@ -1004,6 +1004,18 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     xrHitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
     if (!xrSession) return;
 
+    // ---- CRITICAL: Consume WebXR 'select' events ----
+    // In DOM overlay mode, if no 'select' listener is registered, the browser
+    // synthesises a DOM 'click' at the tap position — which was reaching the
+    // place button on every background tap. By handling 'select' ourselves
+    // (even as a no-op), the browser stops generating those synthetic clicks.
+    xrSession.addEventListener("select", (e) => {
+      // Intentionally empty — placement is driven solely by the place button
+      // setting the placementRequested flag, consumed in onXRFrame.
+    });
+    xrSession.addEventListener("selectstart", (e) => { /* absorb */ });
+    xrSession.addEventListener("selectend", (e) => { /* absorb */ });
+
     loadNearbyGraffiti();
     nearbyInterval = setInterval(loadNearbyGraffiti, 8000);
 
