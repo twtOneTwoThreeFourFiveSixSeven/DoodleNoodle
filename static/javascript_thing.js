@@ -1015,9 +1015,6 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
       gl.clearColor(0, 0, 0, 0);
 
       if (!initWebGL2()) { alert("Shader compilation failed."); return; }
-    } else {
-      // If the context already exists, just ensure it's still bound to the XR device
-      await gl.makeXRCompatible();
     }
 
     arStartBearing = userBearing;
@@ -1095,6 +1092,10 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
           if (piece.texture && gl) try { gl.deleteTexture(piece.texture); } catch (e) { }
         }
         if (previewTexture && gl) try { gl.deleteTexture(previewTexture); } catch (e) { }
+
+        if (gl) {
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        }
 
         // Empty the ghost array
         placedPieces.length = 0;
