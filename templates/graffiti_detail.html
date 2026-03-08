@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>{{ g.description[:40] or 'GoGoGraffiti' }} — GoGoGraffiti</title>
+  <title>{{ g.description[:40] or 'DoodleNoodle' }} — DoodleNoodle</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box;}
     html,body{
@@ -25,21 +25,16 @@
       padding:0 0 40px;
     }
 
-    .top-label{
-      font-size:13px;color:rgba(90,70,45,0.5);
-      padding:8px 16px 0;
-    }
-
     /* ---- Nav ---- */
     .detail-nav{
       display:flex;align-items:center;justify-content:space-between;
-      padding:10px 16px 0;
+      padding:14px 16px 0;
     }
     .btn-back{
       display:inline-block;padding:8px 14px;
       border-radius:8px;border:none;
       background:rgba(255,250,240,0.88);
-      color:#3a2a1a;font-family:'Comic Sans MS','Comic Sans',cursive;
+      color:#222;font-family:'Comic Sans MS','Comic Sans',cursive;
       font-size:0.9rem;font-weight:700;
       text-decoration:none;
       box-shadow:0 1px 4px rgba(0,0,0,0.1);
@@ -63,7 +58,7 @@
       overflow:hidden;
       box-shadow:0 2px 10px rgba(0,0,0,0.12);
       background:
-        repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%)
+        repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%)
         0 0 / 16px 16px;
       line-height:0;
     }
@@ -74,7 +69,7 @@
       margin:14px 12px 0;
       background:rgba(255,250,240,0.88);
       border-radius:14px;
-      padding:16px;
+      padding:18px 16px 12px;
       box-shadow:0 2px 10px rgba(0,0,0,0.08);
     }
 
@@ -85,18 +80,18 @@
     }
     .detail-avatar{
       width:42px;height:42px;border-radius:50%;
-      border:2px solid #d4b896;object-fit:cover;flex-shrink:0;
+      border:2px solid #222;object-fit:cover;flex-shrink:0;
     }
-    .detail-author-name{font-size:0.95rem;font-weight:700;color:#3a2a1a;}
-    .detail-date{font-size:0.8rem;color:#8a7a6a;margin-left:auto;}
+    .detail-author-name{font-size:0.95rem;font-weight:700;color:#222;}
+    .detail-date{font-size:0.8rem;color:#666;margin-left:auto;}
 
     .detail-description{
-      font-size:0.9rem;color:#3a2a1a;
+      font-size:0.95rem;color:#222;
       margin-bottom:10px;line-height:1.5;
     }
 
     .detail-location{
-      font-size:0.8rem;color:#8a7a6a;
+      font-size:0.8rem;color:#666;
       margin-bottom:12px;
     }
 
@@ -105,31 +100,31 @@
     .btn-like{
       display:flex;align-items:center;gap:6px;
       padding:8px 14px;border-radius:20px;
-      border:2px solid #d4b896;
+      border:2px solid #222;
       background:rgba(255,250,240,0.6);
       font-family:'Comic Sans MS','Comic Sans',cursive;
-      font-size:0.9rem;font-weight:700;color:#3a2a1a;
+      font-size:0.9rem;font-weight:700;color:#222;
       cursor:pointer;
       transition:background 0.15s,border-color 0.15s;
     }
     .btn-like.liked{
       background:#f13c34;
-      border-color:#c02020;color:#fff;
+      border-color:#f13c34;color:#fff;
     }
-    .detail-comment-count{font-size:0.9rem;color:#8a7a6a;}
+    .detail-comment-count{font-size:0.9rem;color:#666;}
 
     /* ---- Comments ---- */
     .detail-comments h3{
-      font-size:1.1rem;font-weight:700;color:#3a2a1a;margin-bottom:12px;
+      font-size:1.3rem;font-weight:700;color:#222;margin-bottom:14px;
     }
     .comment-form{
       display:flex;flex-direction:column;gap:8px;margin-bottom:16px;
     }
     .comment-form textarea{
       width:100%;padding:10px 12px;
-      border:2px solid #d4b896;border-radius:10px;
+      border:2px solid #222;border-radius:10px;
       font-family:'Comic Sans MS','Comic Sans',cursive;
-      font-size:0.9rem;color:#3a2a1a;
+      font-size:0.9rem;color:#222;
       background:rgba(255,250,240,0.8);
       resize:vertical;outline:none;
     }
@@ -142,41 +137,39 @@
       font-size:0.9rem;font-weight:700;cursor:pointer;
       box-shadow:0 2px 8px rgba(0,0,0,0.15);
     }
-    .comment-login-hint{font-size:0.9rem;color:#8a7a6a;margin-bottom:12px;}
-    .comment-login-hint a{color:#c02020;text-decoration:none;font-weight:700;}
+    .comment-login-hint{font-size:0.9rem;color:#666;margin-bottom:12px;}
+    .comment-login-hint a{color:#f13c34;text-decoration:none;font-weight:700;}
 
-    .comment-item{padding:10px 0;border-top:1px solid #e8d8c0;}
+    .comment-item{padding:10px 0;border-top:1px solid rgba(0,0,0,0.08);}
     .comment-header{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
     .comment-avatar{
       width:32px;height:32px;border-radius:50%;
-      border:2px solid #d4b896;object-fit:cover;flex-shrink:0;
+      border:2px solid #222;object-fit:cover;flex-shrink:0;
     }
-    .comment-header strong{font-size:0.85rem;color:#3a2a1a;}
-    .comment-date{font-size:0.75rem;color:#8a7a6a;margin-left:auto;}
-    .comment-text{font-size:0.9rem;color:#3a2a1a;line-height:1.5;}
-    .no-comments{font-size:0.9rem;color:#8a7a6a;text-align:center;padding:20px 0;}
+    .comment-header strong{font-size:0.85rem;color:#222;}
+    .comment-date{font-size:0.75rem;color:#666;margin-left:auto;}
+    .comment-text{font-size:0.9rem;color:#222;line-height:1.5;}
+    .no-comments{font-size:0.9rem;color:#666;text-align:center;padding:20px 0;}
   </style>
 </head>
 <body>
 
 <div class="page">
-  <div class="top-label">GoGoGraffiti</div>
-  <!--
-   Nav
+
+  <!-- Nav -->
   <div class="detail-nav">
-    <a href="{{ url_for('home') }}" class="btn-back">← back</a>
+    <a href="{{ url_for('dashboard') }}" class="btn-back">← back</a>
     {% if user %}
       <a href="{{ url_for('app_page') }}" class="btn-open">open app</a>
     {% endif %}
   </div>
-  
-  Graffiti image 
+
+  <!-- Graffiti image -->
+  {% if g.image %}
   <div class="detail-image-wrap">
-    {% if g.image %}
     <img src="{{ g.image }}" alt="Graffiti" class="detail-image">
-    {% endif %}
   </div>
-  -->
+  {% endif %}
 
   <!-- Info panel -->
   <div class="panel">
@@ -194,11 +187,11 @@
 
     <div class="detail-location">
       {% if g.address %}
-        <span>Estimated address: {{ g.address }}</span>
+        <span>📍 {{ g.address }}</span>
       {% elif g.location and g.location.coordinates %}
-        <span>Lat: {{ g.location.coordinates[1] }}, Lng: {{ g.location.coordinates[0] }}</span>
+        <span>📍 {{ g.location.coordinates[1] }}, {{ g.location.coordinates[0] }}</span>
       {% else %}
-        <span>Estimated address: Unknown address</span>
+        <span>📍 Unknown location</span>
       {% endif %}
     </div>
 
@@ -213,7 +206,7 @@
 
   <!-- Comments panel -->
   <div class="panel detail-comments">
-    <h3>Comments</h3>
+    <h3>comments</h3>
 
     {% if user %}
     <form id="comment-form" class="comment-form">
@@ -280,7 +273,7 @@
       if (noComments) noComments.remove();
       const list = document.getElementById("comments-list");
       const div = document.createElement("div");
-      div.className = "comment-item comment-new";
+      div.className = "comment-item";
       div.innerHTML = `<div class="comment-header">
         ${c.author_pic ? `<img src="${c.author_pic}" alt="" class="comment-avatar">` : ''}
         <strong>${c.author}</strong>
