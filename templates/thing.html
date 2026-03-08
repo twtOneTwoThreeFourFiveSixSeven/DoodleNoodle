@@ -41,6 +41,22 @@
     <div class="crosshair-v"></div>
   </div>
 
+  <!-- Static Image Placement Overlay -->
+  <div id="place-overlay">
+    <div id="place-controls-bar">
+      <label class="place-ctrl-label">
+        Scale: <input type="range" id="place-scale-slider" class="place-input-range" min="10" max="400" value="100">
+        <span id="place-scale-label" class="place-ctrl-val">100%</span>
+      </label>
+      <label class="place-ctrl-label">
+        Rotate: <input type="range" id="place-rotate-slider" class="place-input-range" min="0" max="360" value="0">
+        <span id="place-rotate-label" class="place-ctrl-val">0°</span>
+      </label>
+    </div>
+    <button id="place-stamp-btn" class="place-btn">✅ Stamp</button>
+    <button id="place-cancel-btn" class="place-btn">❌ Cancel</button>
+  </div>
+
   <!-- AR overlay -->
   <div id="ar-overlay">
     <div id="ar-version"
@@ -48,8 +64,20 @@
       v2.1</div>
     <div id="ar-status">Point at a wall and tap to place your drawing</div>
     <div class="reticle-hint" id="reticle"></div>
-    
+
     <div id="ar-top-controls">
+      <div id="ar-surface-control"
+        style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:4px;">
+        <label for="ar-surface-mode"
+          style="color:white;font-size:14px;text-shadow:0 0 4px black;font-weight:bold;">Surface:</label>
+        <select id="ar-surface-mode"
+          style="padding:6px 12px;border-radius:6px;border:none;font-size:14px;background:rgba(255,255,255,0.95);color:#222;font-weight:bold;cursor:pointer;">
+          <option value="auto">Auto-Detect</option>
+          <option value="wall">Force Wall</option>
+          <option value="floor">Force Floor</option>
+          <option value="ceiling">Force Ceiling</option>
+        </select>
+      </div>
       <div id="ar-action-bar">
         <input type="text" id="ar-description" placeholder="Describe your graffiti..." maxlength="500">
         <button id="ar-share-btn">Confirm All Updates</button>
@@ -58,7 +86,7 @@
       <div id="ar-gps-status"></div>
       <button id="ar-exit-btn">← Back to Draw</button>
     </div>
-    
+
   </div>
 
   <script src="{{ url_for('static', filename='javascript_thing.js', v='2.0') }}"></script>
