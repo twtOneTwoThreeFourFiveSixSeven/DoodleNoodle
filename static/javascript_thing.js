@@ -895,14 +895,14 @@ function isSecureContext() {
   return location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
 }
 
-// ---- PLACE BUTTON — wired once at page load, only sets a flag ----
-// Using pointerup (not click) so mobile touch → synthetic-click chains are bypassed entirely.
-// The flag is consumed inside onXRFrame, making placement impossible from any other event path.
+// ---- PLACE BUTTON — wired once at page load ----
+// A plain 'click' is fine here because the overlay capture-phase handlers below
+// call preventDefault() on all background touches, preventing any click synthesis
+// from taps that don't land on this button.
 const putdownBtn = document.getElementById("ar-putdown-btn");
 if (putdownBtn) {
-  putdownBtn.addEventListener("pointerup", (e) => {
+  putdownBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    e.preventDefault();
     if (appState === "AR") {
       if (lastHitPose && lastHitFrame) {
         placementRequested = true;
@@ -913,25 +913,39 @@ if (putdownBtn) {
   });
 }
 
-// Block all background taps on the AR overlay so the browser never generates
-// a synthetic click from touch events (registered once to avoid accumulation).
+// ---- BLOCK ALL NON-BUTTON TAPS ON THE AR OVERLAY ----
+// Using capture:true so these handlers fire BEFORE any child element (including
+// the place button) gets a chance to process the event. Background taps are
+// fully killed here — no pointerdown/pointerup/click chain is ever generated.
 if (arOverlay) {
+  const isUIEl = (el) =>
+    el.tagName === "BUTTON" || el.tagName === "INPUT" ||
+    el.tagName === "SELECT" || !!el.closest("button, input, select");
+
+  // Capture touchstart: kill non-UI taps before pointerdown is generated
   arOverlay.addEventListener("touchstart", (e) => {
-    // Allow the tap if it originated on a UI control, block everything else.
-    const tag = e.target.tagName;
-    if (tag !== "BUTTON" && tag !== "INPUT" && tag !== "SELECT" && !e.target.closest("button,input,select")) {
-      e.preventDefault();
-    }
-    e.stopPropagation();
-  }, { passive: false });
+    if (!isUIEl(e.target)) { e.preventDefault(); e.stopPropagation(); }
+  }, { passive: false, capture: true });
+
+  // Capture touchend: belt-and-suspenders — in case touchstart slipped through
+  arOverlay.addEventListener("touchend", (e) => {
+    if (!isUIEl(e.target)) { e.preventDefault(); e.stopPropagation(); }
+  }, { passive: false, capture: true });
+
+  // Capture pointerdown: covers any pointer that didn't start as touch
   arOverlay.addEventListener("pointerdown", (e) => {
-    const tag = e.target.tagName;
-    if (tag !== "BUTTON" && tag !== "INPUT" && tag !== "SELECT" && !e.target.closest("button,input,select")) {
-      e.preventDefault();
-    }
-    e.stopPropagation();
-  });
-  arOverlay.addEventListener("click", (e) => e.stopPropagation());
+    if (!isUIEl(e.target)) { e.preventDefault(); e.stopPropagation(); }
+  }, { capture: true });
+
+  // Capture pointerup: prevent any stray pointerup from reaching child listeners
+  arOverlay.addEventListener("pointerup", (e) => {
+    if (!isUIEl(e.target)) { e.preventDefault(); e.stopPropagation(); }
+  }, { capture: true });
+
+  // Capture click: last line of defence
+  arOverlay.addEventListener("click", (e) => {
+    if (!isUIEl(e.target)) { e.preventDefault(); e.stopPropagation(); }
+  }, { capture: true });
 }
 
 // ---- START WEBXR AR SESSION ----
@@ -980,11 +994,15 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     // Create XRWebGLLayer and bind to session
     glLayer = new XRWebGLLayer(xrSession, gl);
     await xrSession.updateRenderState({ baseLayer: glLayer });
+    if (!xrSession) return; // session ended during setup
     appState = "AR";
 
     xrRefSpace = await xrSession.requestReferenceSpace("local");
+    if (!xrSession) return;
     const viewerSpace = await xrSession.requestReferenceSpace("viewer");
+    if (!xrSession) return;
     xrHitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
+    if (!xrSession) return;
 
     loadNearbyGraffiti();
     nearbyInterval = setInterval(loadNearbyGraffiti, 8000);
@@ -1021,9 +1039,7 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
   }
 });
 
-document.getElementById("ar-exit-btn").addEventListener("click", () => {
-  if (xrSession) xrSession.end();
-});
+
 
 // ===================== GPS + GLOBAL GRAFFITI =====================
 let userLat = null, userLng = null, userBearing = 0;
