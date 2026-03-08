@@ -386,6 +386,7 @@ const APP_VERSION = "3.0-webgl2";
 // Placed graffiti pieces (raw WebGL2 objects)
 // Each: { modelMatrix, texture, id?, anchor?, anchorOffset?, surfaceType, scaleCm, aspect, rotDeg }
 const placedPieces = [];
+let placementRequested = false;  // set ONLY by the place button; consumed in onXRFrame
 let previewTexture = null;   // WebGLTexture for live preview
 let previewMatrix = null;    // Float32Array(16)
 let reticleMatrix = null;    // Float32Array(16) for the reticle ring
@@ -781,6 +782,14 @@ function onXRFrame(time, frame) {
   const pose = frame.getViewerPose(xrRefSpace);
   if (!pose) return;
 
+  // Consume placement request set exclusively by the place button
+  if (placementRequested) {
+    placementRequested = false;
+    if (lastHitPose && lastHitFrame) {
+      placeDrawingAtHit(lastHitPose, lastHitFrame);
+    }
+  }
+
   gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
@@ -886,6 +895,45 @@ function isSecureContext() {
   return location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
 }
 
+// ---- PLACE BUTTON — wired once at page load, only sets a flag ----
+// Using pointerup (not click) so mobile touch → synthetic-click chains are bypassed entirely.
+// The flag is consumed inside onXRFrame, making placement impossible from any other event path.
+const putdownBtn = document.getElementById("ar-putdown-btn");
+if (putdownBtn) {
+  putdownBtn.addEventListener("pointerup", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (appState === "AR") {
+      if (lastHitPose && lastHitFrame) {
+        placementRequested = true;
+      } else {
+        alert("No surface detected. Try again.");
+      }
+    }
+  });
+}
+
+// Block all background taps on the AR overlay so the browser never generates
+// a synthetic click from touch events (registered once to avoid accumulation).
+if (arOverlay) {
+  arOverlay.addEventListener("touchstart", (e) => {
+    // Allow the tap if it originated on a UI control, block everything else.
+    const tag = e.target.tagName;
+    if (tag !== "BUTTON" && tag !== "INPUT" && tag !== "SELECT" && !e.target.closest("button,input,select")) {
+      e.preventDefault();
+    }
+    e.stopPropagation();
+  }, { passive: false });
+  arOverlay.addEventListener("pointerdown", (e) => {
+    const tag = e.target.tagName;
+    if (tag !== "BUTTON" && tag !== "INPUT" && tag !== "SELECT" && !e.target.closest("button,input,select")) {
+      e.preventDefault();
+    }
+    e.stopPropagation();
+  });
+  arOverlay.addEventListener("click", (e) => e.stopPropagation());
+}
+
 // ---- START WEBXR AR SESSION ----
 document.getElementById("ar-btn").addEventListener("click", async () => {
   if (!isSecureContext()) { alert("AR requires HTTPS."); return; }
@@ -941,39 +989,7 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     loadNearbyGraffiti();
     nearbyInterval = setInterval(loadNearbyGraffiti, 8000);
 
-    // Only allow placement via the button
-    const putdownBtn = document.getElementById("ar-putdown-btn");
-    if (putdownBtn) {
-      putdownBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (lastHitPose && lastHitFrame) {
-          placeDrawingAtHit(lastHitPose, lastHitFrame);
-        } else {
-          alert("No surface detected. Try again.");
-        }
-      });
-    }
-
-    // Prevent AR overlay from triggering placement on pointer/touch events.
-    // Calling preventDefault() on background taps stops the browser from
-    // synthesising a click event after touchend, which was accidentally
-    // reaching the place button. Taps on actual UI controls are left alone.
-    if (arOverlay) {
-      const isUITarget = (el) =>
-        el.tagName === "BUTTON" || el.tagName === "INPUT" ||
-        el.tagName === "SELECT" || el.closest("button, input, select");
-      arOverlay.addEventListener("pointerdown", (e) => {
-        e.stopPropagation();
-        if (!isUITarget(e.target)) e.preventDefault();
-      });
-      arOverlay.addEventListener("touchstart", (e) => {
-        e.stopPropagation();
-        if (!isUITarget(e.target)) e.preventDefault();
-      }, { passive: false });
-      arOverlay.addEventListener("click", (e) => e.stopPropagation());
-    }
-
-    // Wire up undo button
+    // Wire up undo button (added per-session is fine; session end cleans up the overlay)
     const undoBtn = document.getElementById("ar-undo-btn");
     if (undoBtn) undoBtn.addEventListener("click", (e) => { e.stopPropagation(); undoLastPiece(); });
 
