@@ -335,10 +335,17 @@ document.getElementById("save-btn").addEventListener("click", () => {
   const a = document.createElement("a"); a.download = "drawing.png"; a.href = canvas.toDataURL(); a.click();
 });
 window.addEventListener("resize", () => {
-  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  // 1. Save current drawing using an offscreen canvas (Hardware accelerated, no massive RAM arrays)
+  const tempCanvas = document.createElement("canvas");
+  tempCanvas.width = canvas.width;
+  tempCanvas.height = canvas.height;
+  tempCanvas.getContext("2d").drawImage(canvas, 0, 0);
+
+  // 2. Resize the actual canvas safely
   resizeCanvas();
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.putImageData(img, 0, 0);
+
+  // 3. Draw it back using drawImage (Handles dimension shifts gracefully without throwing DOMExceptions)
+  ctx.drawImage(tempCanvas, 0, 0);
 });
 
 // ===================== AR MODE (WebXR + raw WebGL2) =====================
@@ -582,7 +589,11 @@ function buildSurfaceMatrix(hitMatrix, scaleCm, aspect, rotDeg, camPos, forceMod
   } else {
     const toCamera = v3Sub(camPos, pos);
     const d = v3Dot(toCamera, normal);
-    const projected = v3Norm(v3Sub(toCamera, v3Scale(normal, d)));
+    let projectedRaw = v3Sub(toCamera, v3Scale(normal, d));
+    if (v3Len(projectedRaw) < 0.001) {
+      projectedRaw = [0, 0, -1];
+    }
+    const projected = v3Norm(projectedRaw);
     up = v3Scale(projected, isCeiling ? 1 : -1);
     right = v3Norm(v3Cross(up, normal));
   }
@@ -908,18 +919,24 @@ function isSecureContext() {
 // from taps that don't land on this button.
 const putdownBtn = document.getElementById("ar-putdown-btn");
 if (putdownBtn) {
-  putdownBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (appState === "AR") {
-      if (lastHitPose && lastHitFrame) {
-        placementRequested = true;
-      } else {
-        alert("No surface detected. Try again.");
-      }
+  // Use a fresh listener to ensure clean logic
+  putdownBtn.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation(); // Stop the event from reaching the overlay
+
+    if (appState === "AR" && lastHitPose && lastHitFrame) {
+      placementRequested = true; // Only set to true here!
+      console.log("Placement triggered by button.");
+    } else if (!lastHitPose) {
+      arStatus.textContent = "⚠️ Move phone to find a surface!";
     }
-  });
+  };
 }
 
+// ---- BLOCK ALL NON-BUTTON TAPS ON THE AR OVERLAY ----
+// Using capture:true so these handlers fire BEFORE any child element (including
+// the place button) gets a chance to process the event. Background taps are
+// fully killed here — no pointerdown/pointerup/click chain is ever generated.
 // ---- BLOCK ALL NON-BUTTON TAPS ON THE AR OVERLAY ----
 // Using capture:true so these handlers fire BEFORE any child element (including
 // the place button) gets a chance to process the event. Background taps are
@@ -931,27 +948,47 @@ if (arOverlay) {
 
   // Capture touchstart: kill non-UI taps before pointerdown is generated
   arOverlay.addEventListener("touchstart", (e) => {
-    if (!isUIEl(e.target)) { e.preventDefault(); e.stopPropagation(); }
+    if (!isUIEl(e.target)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
   }, { passive: false, capture: true });
 
   // Capture touchend: belt-and-suspenders — in case touchstart slipped through
   arOverlay.addEventListener("touchend", (e) => {
-    if (!isUIEl(e.target)) { e.preventDefault(); e.stopPropagation(); }
+    if (!isUIEl(e.target)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
   }, { passive: false, capture: true });
 
   // Capture pointerdown: covers any pointer that didn't start as touch
   arOverlay.addEventListener("pointerdown", (e) => {
-    if (!isUIEl(e.target)) { e.preventDefault(); e.stopPropagation(); }
+    if (!isUIEl(e.target)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
   }, { capture: true });
 
   // Capture pointerup: prevent any stray pointerup from reaching child listeners
   arOverlay.addEventListener("pointerup", (e) => {
-    if (!isUIEl(e.target)) { e.preventDefault(); e.stopPropagation(); }
+    if (!isUIEl(e.target)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
   }, { capture: true });
 
   // Capture click: last line of defence
   arOverlay.addEventListener("click", (e) => {
-    if (!isUIEl(e.target)) { e.preventDefault(); e.stopPropagation(); }
+    if (!isUIEl(e.target)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
   }, { capture: true });
 }
 
@@ -1017,11 +1054,10 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     // place button on every background tap. By handling 'select' ourselves
     // (even as a no-op), the browser stops generating those synthetic clicks.
     xrSession.addEventListener("select", (e) => {
-      // Intentionally empty — placement is driven solely by the place button
-      // setting the placementRequested flag, consumed in onXRFrame.
+      e.preventDefault();
     });
-    xrSession.addEventListener("selectstart", (e) => { /* absorb */ });
-    xrSession.addEventListener("selectend", (e) => { /* absorb */ });
+    xrSession.addEventListener("selectstart", (e) => { e.preventDefault(); });
+    xrSession.addEventListener("selectend", (e) => { e.preventDefault(); });
 
     loadNearbyGraffiti();
     nearbyInterval = setInterval(loadNearbyGraffiti, 8000);
@@ -1034,15 +1070,27 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
       try {
         clearInterval(nearbyInterval);
         nearbyInterval = null;
-        // Clean up all anchors and WebGL textures before nulling gl
+
+        // Clean up all anchors and WebGL textures
         for (const piece of placedPieces) {
           if (piece.anchor) try { piece.anchor.delete(); } catch (e) { }
           if (piece.texture && gl) try { gl.deleteTexture(piece.texture); } catch (e) { }
         }
         if (previewTexture && gl) try { gl.deleteTexture(previewTexture); } catch (e) { }
+
+        // FIX: Empty the ghost array
+        placedPieces.length = 0;
+
+        // FIX: Explicitly command the GPU to release the context before garbage collection
+        if (gl) {
+          const ext = gl.getExtension('WEBGL_lose_context');
+          if (ext) ext.loseContext();
+        }
+
         arOverlay.style.display = "none";
         document.getElementById("draw-toolbar").style.display = "flex";
         document.getElementById("canvas").style.display = "block";
+
         previewTexture = null;
         previewMatrix = null;
         reticleMatrix = null;
@@ -1197,8 +1245,12 @@ async function loadNearbyGraffiti() {
         // Build rotation matrix from quaternion
         const qm = quatToMat4(q);
         // Apply frame delta rotation around Y
-        const ym = mat4RotateAxis(mat4Identity(), [0, 1, 0], frameDelta);
-        const rotated = mat4Multiply(ym, qm);
+        // Re-extract normal from the quaternion matrix (Z-axis column)
+        const normal = [qm[8], qm[9], qm[10]];
+
+        // Rotate around the wall's normal, not the world Y-axis
+        const alignMat = mat4RotateAxis(mat4Identity(), normal, frameDelta);
+        const rotated = mat4Multiply(alignMat, qm);
         // Apply scale to X (width) and Y (height) columns
         modelMatrix = new Float32Array(rotated);
         modelMatrix[0] *= w; modelMatrix[1] *= w; modelMatrix[2] *= w;
