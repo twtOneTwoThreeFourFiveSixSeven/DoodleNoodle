@@ -1155,6 +1155,18 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
 let userLat = null, userLng = null, userBearing = 0;
 let gpsWatchId = null;
 const gpsStatus = document.getElementById("ar-gps-status");
+let userAddress = "";
+
+// --- Reverse geocoding: OpenStreetMap Nominatim (free, no API key required) ---
+async function fetchAddress(lat, lng) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`;
+    const resp = await fetch(url, { headers: { 'User-Agent': 'GoGoGraffiti/1.0' } });
+    const data = await resp.json();
+    if (data && data.display_name) return data.display_name;
+  } catch (err) { console.warn("Address lookup failed:", err); }
+  return "Unknown address";
+}
 
 function startGPSTracking() {
   if (gpsWatchId !== null || !("geolocation" in navigator)) return;
@@ -1162,6 +1174,11 @@ function startGPSTracking() {
     userLat = pos.coords.latitude; userLng = pos.coords.longitude;
     if (pos.coords.heading != null && !isNaN(pos.coords.heading)) userBearing = pos.coords.heading;
     if (gpsStatus) gpsStatus.textContent = `📍 GPS: ${userLat.toFixed(5)}, ${userLng.toFixed(5)}`;
+    // Fetch address after GPS update
+    fetchAddress(userLat, userLng).then(addr => {
+      userAddress = addr;
+      if (gpsStatus) gpsStatus.textContent += ` | Address: ${userAddress}`;
+    });
   }, (err) => {
     console.warn("GPS error:", err.message);
   }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 });
@@ -1175,6 +1192,7 @@ window.addEventListener("deviceorientation", (e) => {
 
 document.getElementById("ar-share-btn").addEventListener("click", async () => {
   if (userLat === null || userLng === null) { alert("Determining location..."); return; }
+  if (!userAddress) { alert("Determining address..."); return; }
   const imageData = canvas.toDataURL("image/png");
   const description = document.getElementById("ar-description").value.trim();
 
@@ -1197,7 +1215,8 @@ document.getElementById("ar-share-btn").addEventListener("click", async () => {
       body: JSON.stringify({
         lat: graffitiLat, lng: graffitiLng, image: imageData, scale: arScaleCm,
         bearing: arStartBearing, description, height: lastPlacedHeight,
-        surfaceType: lastPlacedSurfaceType, quaternion: lastPlacedQuaternion
+        surfaceType: lastPlacedSurfaceType, quaternion: lastPlacedQuaternion,
+        address: userAddress
       })
     });
     if (resp.ok) {
