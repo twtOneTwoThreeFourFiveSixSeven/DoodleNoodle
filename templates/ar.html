@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>GoGoGraffiti — AR</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script>
+    // Nuke any old service workers from previous builds
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        regs.forEach(r => r.unregister());
+        if (regs.length) { console.log('Cleared', regs.length, 'old service worker(s)'); location.reload(); }
+      });
+    }
+  </script>
+</head>
+<body>
+  <!-- ======== Drawing Canvas (pre-AR) ======== -->
+  <div id="draw-toolbar">
+    <button id="pen-btn" class="tool-btn active" title="Pen">✏️</button>
+    <button id="eraser-btn" class="tool-btn" title="Eraser">🧹</button>
+    <label class="slider-label">
+      Size: <span id="size-label">4</span>
+      <input type="range" id="size-slider" min="1" max="40" value="4">
+    </label>
+    <input type="color" id="color-picker" value="#ff0000">
+    <input type="text" id="hex-input" value="#ff0000" maxlength="7" class="hex-field">
+    <button id="clear-btn" class="tool-btn" title="Clear">🗑️</button>
+    <button id="ar-btn" class="tool-btn ar-launch" title="Enter AR">🚀 AR</button>
+  </div>
+
+  <div id="crosshair"></div>
+  <canvas id="canvas"></canvas>
+
+  <!-- ======== AR Overlay (shown during WebXR session) ======== -->
+  <div id="ar-overlay" style="display:none">
+    <div id="ar-status">Initializing AR…</div>
+    <div id="ar-gps-status">📍 Waiting for GPS…</div>
+
+    <div id="ar-controls">
+      <div class="ar-row">
+        <label>Scale:
+          <span id="ar-scale-label">50cm</span>
+          <input type="range" id="ar-scale-slider" min="10" max="300" value="50">
+        </label>
+      </div>
+      <div class="ar-row">
+        <label>Rotate:
+          <span id="ar-rotate-label">0°</span>
+          <input type="range" id="ar-rotate-slider" min="-180" max="180" value="0">
+        </label>
+      </div>
+      <div class="ar-row">
+        <input type="text" id="ar-description" placeholder="Description…" maxlength="140">
+      </div>
+      <div class="ar-row ar-buttons">
+        <button id="ar-share-btn">📤 Share</button>
+        <button id="ar-load-btn">📥 Load Nearby</button>
+        <button id="ar-exit-btn">✖ Exit AR</button>
+      </div>
+    </div>
+
+    <div id="debug-info"></div>
+  </div>
+
+  <!-- WebGPU AR engine — the whole rendering + XR + drawing pipeline -->
+  <script src="/static/js/engine.js" type="module"></script>
+</body>
+</html>

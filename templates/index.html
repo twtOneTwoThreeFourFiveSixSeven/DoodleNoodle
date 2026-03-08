@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GoGoGraffiti</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="landing">
+    <h1>🎨 GoGoGraffiti</h1>
+    <p>Digital AR Graffiti — powered by WebXR + WebGPU</p>
+    {% if user %}
+      <p>Welcome, {{ user.name or user.email or "Artist" }}!</p>
+      <a href="/app" class="btn btn-primary">Launch AR</a>
+      <a href="/logout" class="btn btn-secondary">Logout</a>
+    {% else %}
+      <a href="/login" class="btn btn-primary">Login to Start</a>
+      <a href="/app" class="btn btn-secondary">Try as Guest</a>
+    {% endif %}
+  </div>
+</body>
+</html>
