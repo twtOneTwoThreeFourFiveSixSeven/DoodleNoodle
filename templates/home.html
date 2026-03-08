@@ -2,51 +2,122 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DoodleNoodle — AR Street Art</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css.css') }}">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>DoodleNoodle</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{width:100%;height:100%;overflow:hidden;font-family:'Comic Sans MS',cursive;}
+    .landing{
+      width:100%;height:100%;
+      display:flex;flex-direction:column;
+      align-items:center;justify-content:center;
+      background:#c8a87a url("{{ url_for('static',filename='assets/white-crumpled-paper-texture-background.png') }}") center/cover no-repeat;
+      position:relative;
+      font-family:'Comic Sans MS','Comic Sans',cursive;
+    }
+    /* Warm overlay tint to match the tan paper look */
+    .landing::before{
+      content:'';position:absolute;inset:0;
+      background:rgba(195,165,120,0.55);
+      pointer-events:none;
+    }
+    .landing>*{position:relative;z-index:1;}
+
+    .landing-label{
+      position:absolute;top:12px;left:14px;z-index:2;
+      font:13px/1 'Comic Sans MS','Comic Sans',cursive;
+      color:rgba(90,70,45,0.45);
+    }
+
+    /* ---- Logo ---- */
+    .logo-img{
+      width:450px;height:auto;
+      margin-bottom:-200px;
+      margin-top:-120px;
+    }
+
+    /* ---- Buttons ---- */
+    .landing-actions{
+      display:flex;flex-direction:column;
+      align-items:center;gap:12px;
+      width:72%;max-width:280px;
+    }
+    .btn-login{
+      width:100%;padding:14px 0;
+      border:none;border-radius:8px;
+      font-size:1.05rem;font-weight:600;
+      cursor:pointer;
+      background:linear-gradient(180deg,#f5a623 0%,#ec8c1a 100%);
+      color:#fff;
+      box-shadow:0 3px 10px rgba(0,0,0,0.18);
+      text-decoration:none;text-align:center;display:block;
+      font-family:'Comic Sans MS','Comic Sans',cursive;
+    }
+    .btn-signup{
+      width:100%;padding:14px 0;
+      border:1px solid rgba(170,145,100,0.35);border-radius:8px;
+      font-size:1.05rem;font-weight:600;
+      cursor:pointer;
+      background:rgba(255,250,240,0.88);
+      color:#3a3020;
+      box-shadow:0 2px 6px rgba(0,0,0,0.06);
+      text-decoration:none;text-align:center;display:block;
+      font-family:'Comic Sans MS','Comic Sans',cursive;
+    }
+
+    /* ---- Description ---- */
+    .landing-desc{
+      margin-top:36px;
+      font-size:1.2rem;
+      color:#3a3020;
+      text-align:center;
+      line-height:1.5;
+      padding:0 24px;
+      max-width:300px;
+    }
+
+    /* ---- Logged-in user ---- */
+    .landing-user{
+      display:flex;align-items:center;gap:10px;
+      margin-bottom:14px;
+    }
+    .landing-user img{
+      width:36px;height:36px;border-radius:50%;
+      border:2px solid rgba(255,255,255,0.5);
+    }
+    .landing-user span{
+      color:#3a3020;font-size:1rem;font-weight:600;
+    }
+  </style>
 </head>
-<body class="home-body">
+<body>
 
-  <div class="home-container">
-    <div class="home-hero">
-      <h1 class="home-title">🎨 DoodleNoodle</h1>
-      <p class="home-tagline">Draw. Place. Share.<br>AR street art — anywhere in the world.</p>
+  <div class="landing">
+    <div class="landing-label">Landing page</div>
 
-      <div class="home-features">
-        <div class="feature-card">
-          <span class="feature-icon">✏️</span>
-          <h3>Draw</h3>
-          <p>Create with pen, colors, hex codes, and image inserts</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">📸</span>
-          <h3>Place in AR</h3>
-          <p>Anchor your art on real walls, floors, and surfaces</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">🌍</span>
-          <h3>Share Globally</h3>
-          <p>GPS-locked art visible to anyone nearby</p>
-        </div>
+    <!-- Logo -->
+    <img class="logo-img" src="{{ url_for('static',filename='assets/Untitled_3.png') }}" alt="DoodleNoodle">
+
+    {% if user %}
+      <div class="landing-user">
+        {% if user.picture %}
+          <img src="{{ user.picture }}" alt="">
+        {% endif %}
+        <span>{{ user.name or user.email }}</span>
       </div>
+      <div class="landing-actions">
+        <a href="{{ url_for('dashboard') }}" class="btn-login">open app</a>
+        <a href="{{ url_for('logout') }}" class="btn-signup">log out</a>
+      </div>
+    {% else %}
+      <div class="landing-actions">
+        <a href="{{ url_for('login') }}" class="btn-login">log in</a>
+        <a href="{{ url_for('login') }}" class="btn-signup">sign up</a>
+      </div>
+    {% endif %}
 
-      {% if user %}
-        <div class="home-user">
-          {% if user.picture %}
-            <img src="{{ user.picture }}" alt="avatar" class="home-avatar">
-          {% endif %}
-          <span class="home-username">{{ user.name or user.email }}</span>
-        </div>
-        <div class="home-actions">
-          <a href="{{ url_for('app_page') }}" class="btn btn-primary">🚀 Open App</a>
-          <a href="{{ url_for('logout') }}" class="btn btn-secondary">Log Out</a>
-        </div>
-      {% else %}
-        <div class="home-actions">
-          <a href="{{ url_for('login') }}" class="btn btn-primary">🔐 Log In / Sign Up</a>
-        </div>
-      {% endif %}
+    <div class="landing-desc">
+      Hello this is a very cool description :)
     </div>
   </div>
 
