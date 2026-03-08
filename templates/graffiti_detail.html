@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ g.description[:40] or 'Graffiti' }} — GoGoGraffiti</title>
+  <title>{{ g.description[:40] or 'Doodle Noodle' }} — Doodle Noodle</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css.css') }}">
 </head>
 <body class="home-body">
@@ -35,6 +35,15 @@
       {% if g.description %}
         <p class="detail-description">{{ g.description }}</p>
       {% endif %}
+
+      <div class="detail-location">
+        {% if g.location and g.location.coordinates %}
+          <span class="detail-latlng">Lat: {{ g.location.coordinates[1] }}, Lng: {{ g.location.coordinates[0] }}</span><br>
+        {% else %}
+          <span class="detail-latlng">Location unknown</span><br>
+        {% endif %}
+        <span class="detail-address">Estimated address: {{ g.address or 'Unknown address' }}</span>
+      </div>
 
       <!-- Like button -->
       <div class="detail-actions">
