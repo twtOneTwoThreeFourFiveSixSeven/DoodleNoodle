@@ -794,21 +794,45 @@ function rebuildMatrixFromAnchor(piece, anchorPose) {
 
 // ---- XR FRAME LOOP (raw WebGL2) ----
 function onXRFrame(time, frame) {
-  // Guard against the race where 'end' fires and nulls xrSession/gl
+  // Fix race condition where 'end' fires and nulls xrSession/gl 
   // but one final queued frame callback still executes.
   if (!xrSession || !gl || !glLayer) return;
+
+  // Track frame ID for clean cancellation
   xrFrameId = xrSession.requestAnimationFrame(onXRFrame);
+
   const pose = frame.getViewerPose(xrRefSpace);
   if (!pose) return;
 
   // Consume placement request set exclusively by the place button
   if (placementRequested) {
     placementRequested = false;
+
+    // ---- NEW FIX: SINGLE IMAGE LIMIT ----
+    // Delete all previous pieces from the GPU and memory before placing a new one.
+    if (placedPieces.length > 0) {
+      for (const piece of placedPieces) {
+        // 1. Delete the physical AR anchor
+        if (piece.anchor) {
+          try { piece.anchor.delete(); } catch (e) { }
+        }
+        // 2. Delete the WebGL texture to prevent VRAM overflow
+        if (piece.texture && piece.texture !== previewTexture && gl) {
+          try { gl.deleteTexture(piece.texture); } catch (e) { }
+        }
+      }
+      placedPieces.length = 0; // Empty the array completely
+      console.log("Memory cleared. Stamping new image.");
+    }
+    // -------------------------------------
+
+    // Call your existing matrix math and piece generation function!
     if (lastHitPose && lastHitFrame) {
       placeDrawingAtHit(lastHitPose, lastHitFrame);
     }
   }
 
+  // Clear the WebGL canvas for the new frame
   gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
@@ -816,94 +840,53 @@ function onXRFrame(time, frame) {
   for (const piece of placedPieces) {
     if (piece.anchor) {
       const anchorPose = frame.getPose(piece.anchor.anchorSpace, xrRefSpace);
+      // Only update the matrix if the anchor is still successfully tracked
       if (anchorPose) {
-        rebuildMatrixFromAnchor(piece, anchorPose);
+        piece.matrix = anchorPose.transform.matrix;
       }
     }
   }
 
-  // Process hit tests
-  const mode = document.getElementById("ar-surface-mode")?.value || "auto";
-  const forceMode = mode === "auto" ? null : mode;
-  if (!xrHitTestSource) return; // not yet initialized or already cleaned up
-  const hitResults = frame.getHitTestResults(xrHitTestSource);
-  let hitSurface = "floor";
-
-  if (hitResults.length > 0) {
-    lastHitPose = hitResults[0].getPose(xrRefSpace);
-    lastHitFrame = frame; // store for anchor creation on tap
-    const hitMat = lastHitPose.transform.matrix;
-    const aspect = canvas.width / canvas.height;
-
-    // Build reticle matrix
-    const retInfo = buildReticleMatrix(hitMat, lastCameraPos, forceMode);
-    reticleMatrix = retInfo.matrix;
-    hitSurface = retInfo.surfaceType;
-
-    // Build preview matrix
-    const prevInfo = buildSurfaceMatrix(hitMat, arScaleCm, aspect, arRotationDeg, lastCameraPos, forceMode);
-    previewMatrix = prevInfo.matrix;
-
-    // Update preview texture from current canvas
-    if (!previewTexture) previewTexture = createTexture(canvas);
-    else {
-      gl.bindTexture(gl.TEXTURE_2D, previewTexture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-    }
-
-    arStatus.textContent = "[" + hitSurface.toUpperCase() + (forceMode ? " OVERRIDE" : "") + "] - use the ⬇️ button to place!";
-  } else {
-    lastHitPose = null;
-    lastHitFrame = null;
-    reticleMatrix = null;
-    previewMatrix = null;
-    arStatus.textContent = "Scanning...";
-  }
-
-  // Render for each XR view
-  for (const view of pose.views) {
-    const vp = glLayer.getViewport(view);
-    gl.viewport(vp.x, vp.y, vp.width, vp.height);
-
-    // viewProjection = projection * inverse(view)
-    const vpMat = mat4Multiply(view.projectionMatrix, view.transform.inverse.matrix);
-
-    // Store camera position for surface calculations
-    lastCameraPos = [
-      view.transform.position.x,
-      view.transform.position.y,
-      view.transform.position.z
-    ];
-
+  // Draw everything using the WebGL shader
+  if (shaderProgram && quadVAO) {
     gl.useProgram(shaderProgram);
-    gl.uniformMatrix4fv(uViewProjection, false, vpMat);
     gl.bindVertexArray(quadVAO);
 
-    // Draw placed graffiti pieces (mode 0 = textured)
-    gl.uniform1i(uMode, 0);
+    // Pass the camera projection and view matrices
+    const view = pose.views[0];
+    const vpMatrix = mat4Multiply(view.projectionMatrix, view.transform.inverse.matrix);
+    gl.uniformMatrix4fv(uViewProj, false, vpMatrix);
+
+    // 1. Draw the placed piece
     for (const piece of placedPieces) {
-      gl.uniformMatrix4fv(uModel, false, piece.modelMatrix);
-      gl.uniform1f(uOpacity, 1.0);
-      gl.bindTexture(gl.TEXTURE_2D, piece.texture);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      if (piece.matrix && piece.texture) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, piece.texture);
+
+        gl.uniform1i(uMode, 0); // Image drawing mode
+        gl.uniformMatrix4fv(uModel, false, piece.matrix);
+        gl.uniform1f(uOpacity, piece.opacity || 1.0);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
     }
 
-    // Draw preview (semi-transparent)
-    if (arPreviewEnabled && previewMatrix && previewTexture) {
-      gl.uniform1i(uMode, 0);
-      gl.uniformMatrix4fv(uModel, false, previewMatrix);
-      gl.uniform1f(uOpacity, 0.45);
-      gl.bindTexture(gl.TEXTURE_2D, previewTexture);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-    }
-
-    // Draw reticle ring (mode 1)
+    // 2. Draw the reticle ring (mode 1)
     if (reticleMatrix) {
       gl.uniform1i(uMode, 1);
       gl.uniformMatrix4fv(uModel, false, reticleMatrix);
       gl.uniform1f(uOpacity, 0.9);
-      const surfColors = { wall: [1, 0.2, 0.2], floor: [0.2, 1, 0.2], ceiling: [0.2, 0.8, 1] };
-      gl.uniform3fv(uColor, surfColors[hitSurface] || [1, 1, 1]);
+
+      // Color the reticle based on what surface you are looking at
+      const surfColors = {
+        wall: [1, 0.2, 0.2],
+        floor: [0.2, 1, 0.2],
+        ceiling: [0.2, 0.8, 1]
+      };
+
+      // Fallback to white if surfaceType is undefined
+      gl.uniform3fv(uColor, surfColors[surfaceType] || [1, 1, 1]);
+
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
