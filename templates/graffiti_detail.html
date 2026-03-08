@@ -19,7 +19,9 @@
 
     <!-- Graffiti image -->
     <div class="detail-image-wrap">
+      {% if g.image %}
       <img src="{{ g.image }}" alt="Graffiti" class="detail-image">
+      {% endif %}
     </div>
 
     <!-- Info -->
@@ -37,12 +39,13 @@
       {% endif %}
 
       <div class="detail-location">
-        {% if g.location and g.location.coordinates %}
-          <span class="detail-latlng">Lat: {{ g.location.coordinates[1] }}, Lng: {{ g.location.coordinates[0] }}</span><br>
+        {% if g.address %}
+          <span class="detail-address">Estimated address: {{ g.address }}</span>
+        {% elif g.location and g.location.coordinates %}
+          <span class="detail-latlng">Lat: {{ g.location.coordinates[1] }}, Lng: {{ g.location.coordinates[0] }}</span>
         {% else %}
-          <span class="detail-latlng">Location unknown</span><br>
-        {% endif %}
-        <span class="detail-address">Estimated address: {{ g.address or 'Unknown address' }}</span>
+          <span class="detail-address">Estimated address: Unknown address</span>
+        {% endif %}  
       </div>
 
       <!-- Like button -->
