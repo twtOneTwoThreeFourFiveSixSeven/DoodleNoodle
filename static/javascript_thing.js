@@ -370,6 +370,7 @@ if (arPreviewToggleBtn) {
 }
 
 let xrSession = null;
+let xrFrameId = null;
 let xrRefSpace = null;
 let xrHitTestSource = null;
 let nearbyInterval = null;
@@ -795,7 +796,7 @@ function onXRFrame(time, frame) {
   // Guard against the race where 'end' fires and nulls xrSession/gl
   // but one final queued frame callback still executes.
   if (!xrSession || !gl || !glLayer) return;
-  xrSession.requestAnimationFrame(onXRFrame);
+  xrFrameId = xrSession.requestAnimationFrame(onXRFrame);
   const pose = frame.getViewerPose(xrRefSpace);
   if (!pose) return;
 
@@ -1071,26 +1072,32 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
         clearInterval(nearbyInterval);
         nearbyInterval = null;
 
-        // Clean up all anchors and WebGL textures
+        // 1. CRITICAL: Cancel the pending animation frame!
+        // Make sure to replace 'xrFrameId' with whatever variable you used 
+        // to store the result of xrSession.requestAnimationFrame()
+        if (xrFrameId) {
+          xrSession.cancelAnimationFrame(xrFrameId);
+          xrFrameId = null;
+        }
+
+        // Clean up WebGL textures
+        // (Note: You don't need to manually delete anchors here; WebXR destroys them automatically on end)
         for (const piece of placedPieces) {
-          if (piece.anchor) try { piece.anchor.delete(); } catch (e) { }
           if (piece.texture && gl) try { gl.deleteTexture(piece.texture); } catch (e) { }
         }
         if (previewTexture && gl) try { gl.deleteTexture(previewTexture); } catch (e) { }
 
-        // FIX: Empty the ghost array
+        // Empty the ghost array
         placedPieces.length = 0;
 
-        // FIX: Explicitly command the GPU to release the context before garbage collection
-        if (gl) {
-          const ext = gl.getExtension('WEBGL_lose_context');
-          if (ext) ext.loseContext();
-        }
+        // REMOVED the WEBGL_lose_context block. Let the browser manage this naturally.
 
+        // Update UI
         arOverlay.style.display = "none";
         document.getElementById("draw-toolbar").style.display = "flex";
         document.getElementById("canvas").style.display = "block";
 
+        // Reset state
         previewTexture = null;
         previewMatrix = null;
         reticleMatrix = null;
@@ -1099,13 +1106,13 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
         lastHitFrame = null;
         xrHitTestSource = null;
         anchorsSupported = false;
+
         xrSession = null;
         glLayer = null;
         gl = null;
         appState = "DRAW";
       } catch (err) {
         console.error("Error during AR session cleanup:", err);
-        // Force-null everything even if cleanup threw
         xrSession = null;
         gl = null;
         glLayer = null;
@@ -1114,7 +1121,7 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     });
 
     // Start the XR frame loop
-    xrSession.requestAnimationFrame(onXRFrame);
+    xrFrameId = xrSession.requestAnimationFrame(onXRFrame);
 
   } catch (err) {
     console.error(err);
