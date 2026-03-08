@@ -15,7 +15,7 @@ body {
   flex-direction: column;
   align-items: center;
   background: #f0f0f0;
-  font-family: Arial, sans-serif;
+  font-family: 'Comic Sans MS', 'Comic Sans', cursive;
   overflow: hidden;
 }
 
@@ -91,7 +91,7 @@ body {
 }
 
 #ar-btn {
-  background: #e74c3c;
+  background: #F03D36;
   font-weight: bold;
 }
 
@@ -238,7 +238,7 @@ body {
 }
 
 #ios-gate-status {
-  color: #e74c3c;
+  color: #F03D36;
   margin-top: 12px;
   font-size: 13px;
 }
@@ -273,7 +273,7 @@ body {
 
 #ar-scale-bar input[type="range"] {
   width: 150px;
-  accent-color: #e74c3c;
+  accent-color: #F03D36;
 }
 
 #ar-action-bar {
@@ -700,7 +700,7 @@ body {
 
 .btn-like.liked {
   background: rgba(231, 76, 60, 0.2);
-  border-color: #e74c3c;
+  border-color: #F03D36;
 }
 
 .detail-comment-count {
@@ -803,7 +803,7 @@ body {
 }
 
 .comment-login-hint a {
-  color: #e74c3c;
+  color: #F03D36;
 }
 
 #crosshair {
@@ -844,7 +844,7 @@ body {
 }
 
 body {
-  font-family: 'Arial', sans-serif;
+  font-family: 'Comic Sans MS', 'Comic Sans', cursive;
   line-height: 1.6;
   color: #333;
 }
@@ -1112,10 +1112,10 @@ footer {
 #place-cancel-btn {
   left: 50%;
   transform: translateX(10%);
-  background: #e74c3c;
+  background: #F03D36;
   color: white;
 }
 
 #place-cancel-btn:hover {
-  background: #ff5e57;
+  background: #F03D36;
 }
