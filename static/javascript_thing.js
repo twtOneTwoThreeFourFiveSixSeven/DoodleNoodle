@@ -685,6 +685,8 @@ async function placeDrawingAtHit(pose, frame) {
   if (anchorsSupported && frame) {
     try {
       const anchor = await frame.createAnchor(pose.transform, xrRefSpace);
+      // Session may have ended during await
+      if (!gl || !xrSession) { console.warn("Session ended during anchor creation"); return; }
       piece.anchor = anchor;
       console.log("⚓ Anchor created for piece", placedPieces.length);
     } catch (e) {
@@ -713,7 +715,7 @@ function undoLastPiece() {
   if (removed.anchor) {
     try { removed.anchor.delete(); } catch (e) { /* ok */ }
   }
-  if (removed.texture) gl.deleteTexture(removed.texture);
+  if (removed.texture && gl) gl.deleteTexture(removed.texture);
   updateAnchorCount();
   arStatus.textContent = "↩ Undone — " + placedPieces.length + " piece(s) remain";
 }
@@ -778,6 +780,9 @@ function rebuildMatrixFromAnchor(piece, anchorPose) {
 
 // ---- XR FRAME LOOP (raw WebGL2) ----
 function onXRFrame(time, frame) {
+  // Guard against the race where 'end' fires and nulls xrSession/gl
+  // but one final queued frame callback still executes.
+  if (!xrSession || !gl || !glLayer) return;
   xrSession.requestAnimationFrame(onXRFrame);
   const pose = frame.getViewerPose(xrRefSpace);
   if (!pose) return;
@@ -1024,22 +1029,38 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
     if (undoBtn) undoBtn.addEventListener("click", (e) => { e.stopPropagation(); undoLastPiece(); });
 
     xrSession.addEventListener("end", () => {
-      clearInterval(nearbyInterval);
-      nearbyInterval = null;
-      // Clean up all anchors
-      for (const piece of placedPieces) {
-        if (piece.anchor) try { piece.anchor.delete(); } catch (e) { }
+      try {
+        clearInterval(nearbyInterval);
+        nearbyInterval = null;
+        // Clean up all anchors and WebGL textures before nulling gl
+        for (const piece of placedPieces) {
+          if (piece.anchor) try { piece.anchor.delete(); } catch (e) { }
+          if (piece.texture && gl) try { gl.deleteTexture(piece.texture); } catch (e) { }
+        }
+        if (previewTexture && gl) try { gl.deleteTexture(previewTexture); } catch (e) { }
+        arOverlay.style.display = "none";
+        document.getElementById("draw-toolbar").style.display = "flex";
+        document.getElementById("canvas").style.display = "block";
+        previewTexture = null;
+        previewMatrix = null;
+        reticleMatrix = null;
+        placementRequested = false;
+        lastHitPose = null;
+        lastHitFrame = null;
+        xrHitTestSource = null;
+        anchorsSupported = false;
+        xrSession = null;
+        glLayer = null;
+        gl = null;
+        appState = "DRAW";
+      } catch (err) {
+        console.error("Error during AR session cleanup:", err);
+        // Force-null everything even if cleanup threw
+        xrSession = null;
+        gl = null;
+        glLayer = null;
+        appState = "DRAW";
       }
-      arOverlay.style.display = "none";
-      document.getElementById("draw-toolbar").style.display = "flex";
-      document.getElementById("canvas").style.display = "block";
-      previewTexture = null;
-      previewMatrix = null;
-      reticleMatrix = null;
-      anchorsSupported = false;
-      xrSession = null;
-      gl = null;
-      appState = "DRAW";
     });
 
     // Start the XR frame loop
