@@ -37,12 +37,12 @@
       {% endif %}
 
       <div class="detail-location">
-        {% if g.location and g.location.coordinates %}
-          <span class="detail-latlng">Lat: {{ g.location.coordinates[1] }}, Lng: {{ g.location.coordinates[0] }}</span><br>
+        {% if g.address %}
+          <span class="detail-address">Estimated address: {{ g.address }}</span>
         {% else %}
-          <span class="detail-latlng">Location unknown</span><br>
+          <span class="detail-address">Estimated address: Unknown address</span>
         {% endif %}
-        <span class="detail-address">Estimated address: {{ g.address or 'Unknown address' }}</span>
+          <span class="detail-latlng">Lat: {{ g.location.coordinates[1] }}, Lng: {{ g.location.coordinates[0] }}</span>
       </div>
 
       <!-- Like button -->
