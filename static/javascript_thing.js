@@ -369,6 +369,7 @@ if (arPreviewToggleBtn) {
   arPreviewToggleBtn.textContent = arPreviewEnabled ? "👁️ Preview On" : "🙈 Preview Off";
 }
 
+let arCanvas = null;
 let xrSession = null;
 let xrFrameId = null;
 let xrRefSpace = null;
@@ -1001,18 +1002,23 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
   if (!supported) { alert("Immersive AR not supported."); return; }
 
   try {
-    // Create WebGL2 context
-    const arCanvas = document.createElement("canvas");
-    gl = arCanvas.getContext("webgl2", { xrCompatible: true, alpha: true });
-    if (!gl) { alert("WebGL2 not available."); return; }
+    // Create the WebGL2 context ONLY ONCE and reuse it
+    if (!arCanvas) {
+      arCanvas = document.createElement("canvas");
+      gl = arCanvas.getContext("webgl2", { xrCompatible: true, alpha: true });
+      if (!gl) { alert("WebGL2 not available."); return; }
 
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-    gl.clearColor(0, 0, 0, 0);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.clearColor(0, 0, 0, 0);
 
-    if (!initWebGL2()) { alert("Shader compilation failed."); return; }
+      if (!initWebGL2()) { alert("Shader compilation failed."); return; }
+    } else {
+      // If the context already exists, just ensure it's still bound to the XR device
+      await gl.makeXRCompatible();
+    }
 
     arStartBearing = userBearing;
     arStartLat = userLat;
@@ -1078,7 +1084,7 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
         clearInterval(nearbyInterval);
         nearbyInterval = null;
 
-        // 1. CRITICAL: Cancel the pending animation frame safely
+        // 1. Cancel the pending animation frame safely
         if (xrFrameId && xrSession) {
           try { xrSession.cancelAnimationFrame(xrFrameId); } catch (e) { }
           xrFrameId = null;
@@ -1092,16 +1098,6 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
 
         // Empty the ghost array
         placedPieces.length = 0;
-
-        // 2. RESTORE THE GPU KILL SWITCH
-        // Because you generate a new <canvas> every time AR starts, you MUST 
-        // manually kill the old WebGL context to prevent a VRAM out-of-memory crash.
-        if (gl) {
-          try {
-            const ext = gl.getExtension('WEBGL_lose_context');
-            if (ext) ext.loseContext();
-          } catch (e) { console.error("Error losing context:", e); }
-        }
 
         // Update UI
         arOverlay.style.display = "none";
@@ -1120,12 +1116,13 @@ document.getElementById("ar-btn").addEventListener("click", async () => {
 
         xrSession = null;
         glLayer = null;
-        gl = null;
+
+        // CRITICAL: DO NOT set gl = null. We are keeping it alive for the next session!
+
         appState = "DRAW";
       } catch (err) {
         console.error("Error during AR session cleanup:", err);
         xrSession = null;
-        gl = null;
         glLayer = null;
         appState = "DRAW";
       }
